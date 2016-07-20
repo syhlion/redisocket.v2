@@ -242,7 +242,9 @@ func (a *app) Close() {
 }
 func (e *app) Notify(event string, data []byte) (val int, err error) {
 
-	val, err = redis.Int(e.rpool.Get().Do("PUBLISH", event, data))
+	conn := e.rpool.Get()
+	defer conn.Close()
+	val, err = redis.Int(conn.Do("PUBLISH", event, data))
 	err = e.rpool.Get().Flush()
 	return
 }
