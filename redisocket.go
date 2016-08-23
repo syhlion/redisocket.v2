@@ -155,10 +155,17 @@ func (a *app) unsubscribe(event string, c Subscriber) (err error) {
 }
 func (a *app) UnsubscribeAll(c Subscriber) {
 	a.Lock()
-	defer a.Unlock()
+	conn := a.rpool.Get()
+	defer func() {
+		a.Unlock()
+		conn.Close()
+	}()
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
 			delete(a.subjects[e], c)
+			if len(a.subjects[e]) == 0 {
+				conn.Do("UNSUBSCRIBE", e)
+			}
 		}
 		delete(a.subscribers, c)
 	}
@@ -240,6 +247,7 @@ func (a *app) Close() {
 	return
 
 }
+
 func (e *app) Notify(event string, data []byte) (val int, err error) {
 
 	conn := e.rpool.Get()
