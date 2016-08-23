@@ -88,6 +88,7 @@ func (c *client) Close() {
 }
 
 func (c *client) Listen(re ReceiveMsgHandler) (err error) {
+	defer c.Close()
 	c.re = re
 	writeErr := c.writePump()
 	readErr := c.readPump()

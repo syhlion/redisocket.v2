@@ -2,6 +2,7 @@ package redisocket
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -110,18 +111,14 @@ func (a *app) subscribe(event string, c Subscriber) (err error) {
 
 	defer a.Unlock()
 	//observer map
-	if m, ok := a.subscribers[c]; ok {
-		m[event] = true
-	} else {
+	if _, ok := a.subscribers[c]; !ok {
 		events := make(map[string]bool)
 		events[event] = true
 		a.subscribers[c] = events
 	}
 
 	//event map
-	if m, ok := a.subjects[event]; ok {
-		m[c] = true
-	} else {
+	if _, ok := a.subjects[event]; !ok {
 		clients := make(map[Subscriber]bool)
 		clients[c] = true
 		a.subjects[event] = clients
@@ -144,31 +141,27 @@ func (a *app) unsubscribe(event string, c Subscriber) (err error) {
 	if m, ok := a.subjects[event]; ok {
 		delete(m, c)
 		if len(m) == 0 {
+
 			err = a.psc.Unsubscribe(event)
 			if err != nil {
+				log.Println(err)
 				return
 			}
+			delete(a.subjects, event)
 		}
 	}
 
 	return
 }
 func (a *app) UnsubscribeAll(c Subscriber) {
-	a.Lock()
-	conn := a.rpool.Get()
-	defer func() {
-		a.Unlock()
-		conn.Close()
-	}()
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
-			delete(a.subjects[e], c)
-			if len(a.subjects[e]) == 0 {
-				conn.Do("UNSUBSCRIBE", e)
-			}
+			a.unsubscribe(e, c)
 		}
-		delete(a.subscribers, c)
 	}
+	a.Lock()
+	delete(a.subscribers, c)
+	a.Unlock()
 	return
 }
 func (a *app) listenRedis() <-chan error {
