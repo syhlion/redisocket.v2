@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type client struct {
+type Client struct {
 	ws     *websocket.Conn
 	events map[string]EventHandler
 	send   chan []byte
@@ -17,27 +17,27 @@ type client struct {
 	app *app
 }
 
-func (c *client) Subscribe(event string, h EventHandler) error {
+func (c *Client) Subscribe(event string, h EventHandler) error {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
 	return c.app.subscribe(event, c)
 }
-func (c *client) Unsubscribe(event string) error {
+func (c *Client) Unsubscribe(event string) error {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
 	return c.app.unsubscribe(event, c)
 }
 
-func (c *client) Trigger(event string, data []byte) (err error) {
+func (c *Client) trigger(event string, data []byte) (err error) {
 	c.RLock()
 	h, ok := c.events[event]
 	c.RUnlock()
 	if !ok {
 		return errors.New("No Event")
 	}
-	b, err := h(data)
+	b, err := h(event, data)
 	if err != nil {
 		return
 	}
@@ -45,12 +45,17 @@ func (c *client) Trigger(event string, data []byte) (err error) {
 	return
 }
 
-func (c *client) write(msgType int, data []byte) error {
+func (c *Client) Send(data []byte) {
+	c.send <- data
+	return
+}
+
+func (c *Client) write(msgType int, data []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.ws.WriteMessage(msgType, data)
 }
 
-func (c *client) readPump() <-chan error {
+func (c *Client) readPump() <-chan error {
 
 	errChan := make(chan error)
 	go func() {
@@ -81,13 +86,13 @@ func (c *client) readPump() <-chan error {
 	return errChan
 
 }
-func (c *client) Close() {
+func (c *Client) Close() {
 	c.app.UnsubscribeAll(c)
 	c.ws.Close()
 	return
 }
 
-func (c *client) Listen(re ReceiveMsgHandler) (err error) {
+func (c *Client) Listen(re ReceiveMsgHandler) (err error) {
 	defer c.Close()
 	c.re = re
 	writeErr := c.writePump()
@@ -100,7 +105,7 @@ func (c *client) Listen(re ReceiveMsgHandler) (err error) {
 	}
 }
 
-func (c *client) writePump() <-chan error {
+func (c *Client) writePump() <-chan error {
 	errChan := make(chan error)
 	go func() {
 		t := time.NewTicker(pingPeriod)

@@ -26,37 +26,19 @@ var Upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-type EventHandler func([]byte) ([]byte, error)
+type EventHandler func(event string, b []byte) ([]byte, error)
 
 type ReceiveMsgHandler func([]byte) error
 
-//Subscriber
-type Subscriber interface {
-	//A Subscriber can subscribe subject
-	Subscribe(event string, h EventHandler) error
-
-	//A Subscriber can  unsubscribe subject
-	Unsubscribe(event string) error
-
-	//Clients start listen. It's blocked
-	Listen(ReceiveMsgHandler) error
-
-	//Close clients connection
-	Close()
-
-	//Subscriber can trigger event
-	Trigger(event string, data []byte) (err error)
-}
-
 type App interface {
 	// It client's Producer
-	NewClient(w http.ResponseWriter, r *http.Request) (Subscriber, error)
+	NewClient(w http.ResponseWriter, r *http.Request) (*Client, error)
 
 	//It can notify All subscriber
 	Notify(subject string, data []byte) (int, error)
 
 	//A subscriber can cancel all subscriptions
-	UnsubscribeAll(c Subscriber)
+	UnsubscribeAll(c *Client)
 
 	//App start listen. It's blocked
 	Listen() error
@@ -78,16 +60,16 @@ func NewApp(p *redis.Pool) App {
 		rpool:       p,
 		psc:         &redis.PubSubConn{p.Get()},
 		RWMutex:     new(sync.RWMutex),
-		subjects:    make(map[string]map[Subscriber]bool),
-		subscribers: make(map[Subscriber]map[string]bool),
+		subjects:    make(map[string]map[*Client]bool),
+		subscribers: make(map[*Client]map[string]bool),
 		closeSign:   make(chan int),
 	}
 
 	return e
 }
-func (e *app) NewClient(w http.ResponseWriter, r *http.Request) (c Subscriber, err error) {
+func (e *app) NewClient(w http.ResponseWriter, r *http.Request) (c *Client, err error) {
 	ws, err := Upgrader.Upgrade(w, r, nil)
-	c = &client{
+	c = &Client{
 		ws:      ws,
 		send:    make(chan []byte, 4096),
 		RWMutex: new(sync.RWMutex),
@@ -100,13 +82,13 @@ func (e *app) NewClient(w http.ResponseWriter, r *http.Request) (c Subscriber, e
 type app struct {
 	psc         *redis.PubSubConn
 	rpool       *redis.Pool
-	subjects    map[string]map[Subscriber]bool
-	subscribers map[Subscriber]map[string]bool
+	subjects    map[string]map[*Client]bool
+	subscribers map[*Client]map[string]bool
 	closeSign   chan int
 	*sync.RWMutex
 }
 
-func (a *app) subscribe(event string, c Subscriber) (err error) {
+func (a *app) subscribe(event string, c *Client) (err error) {
 	a.Lock()
 
 	defer a.Unlock()
@@ -119,7 +101,7 @@ func (a *app) subscribe(event string, c Subscriber) (err error) {
 
 	//event map
 	if _, ok := a.subjects[event]; !ok {
-		clients := make(map[Subscriber]bool)
+		clients := make(map[*Client]bool)
 		clients[c] = true
 		a.subjects[event] = clients
 		err = a.psc.Subscribe(event)
@@ -129,7 +111,7 @@ func (a *app) subscribe(event string, c Subscriber) (err error) {
 	}
 	return
 }
-func (a *app) unsubscribe(event string, c Subscriber) (err error) {
+func (a *app) unsubscribe(event string, c *Client) (err error) {
 	a.Lock()
 	defer a.Unlock()
 
@@ -153,7 +135,7 @@ func (a *app) unsubscribe(event string, c Subscriber) (err error) {
 
 	return
 }
-func (a *app) UnsubscribeAll(c Subscriber) {
+func (a *app) UnsubscribeAll(c *Client) {
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
 			a.unsubscribe(e, c)
@@ -175,7 +157,7 @@ func (a *app) listenRedis() <-chan error {
 				clients := a.subjects[v.Channel]
 				a.RUnlock()
 				for c, _ := range clients {
-					c.Trigger(v.Channel, v.Data)
+					c.trigger(v.Channel, v.Data)
 				}
 
 			case error:
