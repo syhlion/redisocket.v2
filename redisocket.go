@@ -164,7 +164,6 @@ func (a *app) listenRedis() <-chan error {
 				errChan <- v
 
 				for c, _ := range a.subscribers {
-					a.UnsubscribeAll(c)
 					c.Close()
 				}
 				break
@@ -182,7 +181,6 @@ func (a *app) Listen() error {
 	case <-a.closeSign:
 		close(a.closeSign)
 		for c, _ := range a.subscribers {
-			a.UnsubscribeAll(c)
 			c.Close()
 		}
 		return APPCLOSE
