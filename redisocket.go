@@ -54,8 +54,12 @@ type App interface {
 }
 
 //NewApp It's create a App
-func NewApp(p *redis.Pool) App {
-	e := &app{
+func NewApp(p *redis.Pool) (e App, err error) {
+	_, err = p.Get().Do("PING")
+	if err != nil {
+		return
+	}
+	e = &app{
 
 		rpool:       p,
 		psc:         &redis.PubSubConn{p.Get()},
@@ -63,9 +67,10 @@ func NewApp(p *redis.Pool) App {
 		subjects:    make(map[string]map[*Client]bool),
 		subscribers: make(map[*Client]map[string]bool),
 		closeSign:   make(chan int),
+		closeflag:   false,
 	}
 
-	return e
+	return
 }
 func (e *app) NewClient(w http.ResponseWriter, r *http.Request) (c *Client, err error) {
 	ws, err := Upgrader.Upgrade(w, r, nil)
@@ -85,6 +90,7 @@ type app struct {
 	subjects    map[string]map[*Client]bool
 	subscribers map[*Client]map[string]bool
 	closeSign   chan int
+	closeflag   bool
 	*sync.RWMutex
 }
 
@@ -148,7 +154,7 @@ func (a *app) UnsubscribeAll(c *Client) {
 }
 func (a *app) listenRedis() <-chan error {
 
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	go func() {
 		for {
 			switch v := a.psc.Receive().(type) {
@@ -163,26 +169,27 @@ func (a *app) listenRedis() <-chan error {
 			case error:
 				errChan <- v
 
-				for c, _ := range a.subscribers {
-					c.Close()
-				}
 				break
 			}
 		}
 	}()
 	return errChan
 }
+
+func (a *app) close() {
+	a.closeflag = true
+	for c, _ := range a.subscribers {
+		c.Close()
+	}
+}
 func (a *app) Listen() error {
 	redisErr := a.listenRedis()
 	select {
 	case e := <-redisErr:
-		close(a.closeSign)
+		a.close()
 		return e
 	case <-a.closeSign:
-		close(a.closeSign)
-		for c, _ := range a.subscribers {
-			c.Close()
-		}
+		a.close()
 		return APPCLOSE
 
 	}
@@ -216,7 +223,10 @@ func (a *app) NumSubscriber(subject string) (c int, err error) {
 	return
 }
 func (a *app) Close() {
-	a.closeSign <- 1
+	if !a.closeflag {
+		a.closeSign <- 1
+		close(a.closeSign)
+	}
 	return
 
 }
