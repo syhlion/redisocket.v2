@@ -2,7 +2,6 @@ package redisocket
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -11,34 +10,39 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512
+type WebsocketOptional struct {
+	WriteWait      time.Duration
+	PongWait       time.Duration
+	PingPeriod     time.Duration
+	MaxMessageSize int64
+	Upgrader       websocket.Upgrader
+}
+
+var (
+	DefaultWebsocketOptional = WebsocketOptional{
+		WriteWait:      10 * time.Second,
+		PongWait:       60 * time.Second,
+		PingPeriod:     (60 * time.Second * 9) / 10,
+		MaxMessageSize: 512,
+	}
 )
 
-var conn redis.Conn
 var APPCLOSE = errors.New("APP_CLOSE")
-var Upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
-}
 
 type EventHandler func(event string, b []byte) ([]byte, error)
 
 type ReceiveMsgHandler func([]byte) error
 
+/*
 type App interface {
 	// It client's Producer
 	NewClient(w http.ResponseWriter, r *http.Request) (*Client, error)
 
 	//It can notify All subscriber
-	Notify(subject string, data []byte) (int, error)
+	Publish(subject string, data []byte) (int, error)
 
 	//A subscriber can cancel all subscriptions
-	UnsubscribeAll(c *Client)
+	UnregisterAll(c *Client)
 
 	//App start listen. It's blocked
 	Listen() error
@@ -51,16 +55,14 @@ type App interface {
 
 	//App Close
 	Close()
-}
+}*/
 
-//NewApp It's create a App
-func NewApp(p *redis.Pool) (e App, err error) {
-	_, err = p.Get().Do("PING")
-	if err != nil {
-		return
-	}
-	e = &app{
+//NewApp It's create a Hub
+func New(p *redis.Pool) (e *Hub) {
 
+	e = &Hub{
+
+		Config:      DefaultWebsocketOptional,
 		rpool:       p,
 		psc:         &redis.PubSubConn{p.Get()},
 		RWMutex:     new(sync.RWMutex),
@@ -72,19 +74,20 @@ func NewApp(p *redis.Pool) (e App, err error) {
 
 	return
 }
-func (e *app) NewClient(w http.ResponseWriter, r *http.Request) (c *Client, err error) {
-	ws, err := Upgrader.Upgrade(w, r, nil)
+func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (c *Client, err error) {
+	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	c = &Client{
 		ws:      ws,
 		send:    make(chan []byte, 4096),
 		RWMutex: new(sync.RWMutex),
-		app:     e,
+		hub:     e,
 		events:  make(map[string]EventHandler),
 	}
 	return
 }
 
-type app struct {
+type Hub struct {
+	Config      WebsocketOptional
 	psc         *redis.PubSubConn
 	rpool       *redis.Pool
 	subjects    map[string]map[*Client]bool
@@ -94,7 +97,15 @@ type app struct {
 	*sync.RWMutex
 }
 
-func (a *app) subscribe(event string, c *Client) (err error) {
+func (a *Hub) Ping() (err error) {
+	_, err = a.rpool.Get().Do("PING")
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (a *Hub) register(event string, c *Client) (err error) {
 	a.Lock()
 
 	defer a.Unlock()
@@ -110,14 +121,16 @@ func (a *app) subscribe(event string, c *Client) (err error) {
 		clients := make(map[*Client]bool)
 		clients[c] = true
 		a.subjects[event] = clients
-		err = a.psc.Subscribe(event)
-		if err != nil {
-			return
-		}
 	}
 	return
 }
-func (a *app) unsubscribe(event string, c *Client) (err error) {
+
+/*
+func (a *Hub) subscribe(event string) (err error) {
+	return a.psc.Subscribe(event)
+}
+*/
+func (a *Hub) unregister(event string, c *Client) (err error) {
 	a.Lock()
 	defer a.Unlock()
 
@@ -129,22 +142,27 @@ func (a *app) unsubscribe(event string, c *Client) (err error) {
 	if m, ok := a.subjects[event]; ok {
 		delete(m, c)
 		if len(m) == 0 {
-
-			err = a.psc.Unsubscribe(event)
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			/*
+				err = a.psc.Unsubscribe(event)
+				if err != nil {
+					log.Println(err)
+					return
+				}*/
 			delete(a.subjects, event)
 		}
 	}
 
 	return
 }
-func (a *app) UnsubscribeAll(c *Client) {
+
+/*
+func (a *Hub) unsubscribe(event string) (err error) {
+	return a.psc.Unsubscribe(event)
+}*/
+func (a *Hub) UnregisterAll(c *Client) {
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
-			a.unsubscribe(e, c)
+			a.unregister(e, c)
 		}
 	}
 	a.Lock()
@@ -152,18 +170,18 @@ func (a *app) UnsubscribeAll(c *Client) {
 	a.Unlock()
 	return
 }
-func (a *app) listenRedis() <-chan error {
+func (a *Hub) listenRedis() <-chan error {
 
 	errChan := make(chan error, 1)
 	go func() {
 		for {
 			switch v := a.psc.Receive().(type) {
-			case redis.Message:
+			case redis.PMessage:
 				a.RLock()
 				clients := a.subjects[v.Channel]
 				a.RUnlock()
 				for c, _ := range clients {
-					c.trigger(v.Channel, v.Data)
+					c.Trigger(v.Channel, v.Data)
 				}
 
 			case error:
@@ -176,13 +194,14 @@ func (a *app) listenRedis() <-chan error {
 	return errChan
 }
 
-func (a *app) close() {
+func (a *Hub) close() {
 	a.closeflag = true
 	for c, _ := range a.subscribers {
 		c.Close()
 	}
 }
-func (a *app) Listen() error {
+func (a *Hub) Listen() error {
+	a.psc.PSubscribe("*")
 	redisErr := a.listenRedis()
 	select {
 	case e := <-redisErr:
@@ -194,7 +213,9 @@ func (a *app) Listen() error {
 
 	}
 }
-func (a *app) ListSubject() (subs []string, err error) {
+
+/*
+func (a *Hub) ListSubject() (subs []string, err error) {
 	reply, err := redis.Values(a.rpool.Get().Do("PUBSUB", "CHANNELS"))
 	if err != nil {
 		return
@@ -207,7 +228,7 @@ func (a *app) ListSubject() (subs []string, err error) {
 	}
 	return
 }
-func (a *app) NumSubscriber(subject string) (c int, err error) {
+func (a *Hub) NumSubscriber(subject string) (c int, err error) {
 	reply, err := redis.Values(a.rpool.Get().Do("PUBSUB", "NUMSUB", subject))
 	if err != nil {
 		return
@@ -221,8 +242,8 @@ func (a *app) NumSubscriber(subject string) (c int, err error) {
 		return
 	}
 	return
-}
-func (a *app) Close() {
+}*/
+func (a *Hub) Close() {
 	if !a.closeflag {
 		a.closeSign <- 1
 		close(a.closeSign)
@@ -231,7 +252,7 @@ func (a *app) Close() {
 
 }
 
-func (e *app) Notify(event string, data []byte) (val int, err error) {
+func (e *Hub) Publish(event string, data []byte) (val int, err error) {
 
 	conn := e.rpool.Get()
 	defer conn.Close()

@@ -14,23 +14,23 @@ type Client struct {
 	send   chan []byte
 	*sync.RWMutex
 	re  ReceiveMsgHandler
-	app *app
+	hub *Hub
 }
 
-func (c *Client) Subscribe(event string, h EventHandler) error {
+func (c *Client) On(event string, h EventHandler) error {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
-	return c.app.subscribe(event, c)
+	return c.hub.register(event, c)
 }
-func (c *Client) Unsubscribe(event string) error {
+func (c *Client) Off(event string) error {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
-	return c.app.unsubscribe(event, c)
+	return c.hub.unregister(event, c)
 }
 
-func (c *Client) trigger(event string, data []byte) (err error) {
+func (c *Client) Trigger(event string, data []byte) (err error) {
 	c.RLock()
 	h, ok := c.events[event]
 	c.RUnlock()
@@ -51,7 +51,7 @@ func (c *Client) Send(data []byte) {
 }
 
 func (c *Client) write(msgType int, data []byte) error {
-	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
+	c.ws.SetWriteDeadline(time.Now().Add(c.hub.Config.WriteWait))
 	return c.ws.WriteMessage(msgType, data)
 }
 
@@ -62,9 +62,9 @@ func (c *Client) readPump() <-chan error {
 		defer func() {
 			c.Close()
 		}()
-		c.ws.SetReadLimit(maxMessageSize)
-		c.ws.SetReadDeadline(time.Now().Add(pongWait))
-		c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+		c.ws.SetReadLimit(c.hub.Config.MaxMessageSize)
+		c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait))
+		c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait)); return nil })
 		for {
 			msgType, data, err := c.ws.ReadMessage()
 			if err != nil {
@@ -87,7 +87,7 @@ func (c *Client) readPump() <-chan error {
 
 }
 func (c *Client) Close() {
-	c.app.UnsubscribeAll(c)
+	c.hub.UnregisterAll(c)
 	c.ws.Close()
 	return
 }
@@ -108,7 +108,7 @@ func (c *Client) Listen(re ReceiveMsgHandler) (err error) {
 func (c *Client) writePump() <-chan error {
 	errChan := make(chan error)
 	go func() {
-		t := time.NewTicker(pingPeriod)
+		t := time.NewTicker(c.hub.Config.PingPeriod)
 		defer func() {
 			c.Close()
 			t.Stop()
