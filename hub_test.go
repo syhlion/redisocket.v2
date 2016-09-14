@@ -1,26 +1,55 @@
 package redisocket
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/garyburd/redigo/redis"
+)
+
+var (
+	testChannel = []string{"TEST_A", "TEST_B", "TEST_C"}
+	rpool       = redis.NewPool(func() (conn redis.Conn, err error) {
+		return
+	}, 10)
+	hub    = NewHub(rpool)
+	client = &Client{}
+)
+
+func init() {
+	for _, v := range testChannel {
+		hub.register(v, client)
+	}
+}
 
 func TestRegister(t *testing.T) {
-
-	/*
-		testChannel := []string{"TEST_A", "TEST_B", "TEST_C"}
-		for _, v := range testChannel {
-			hub.register(v, c)
+	for _, v := range testChannel {
+		if _, ok := hub.subjects[v]; !ok {
+			t.Errorf("no subjects %s", v)
 		}
-		for _, v := range testChannel {
-			if _, ok := hub.subjects[v]; !ok {
-				t.Errorf("No Register %s Sucess", v)
-			}
 
-			if _, ok := hub.subscribers[c]; !ok {
-				t.Errorf("No Register %v Sucess", c)
-			}
-			channels := hub.subscribers[c]
-			if _, ok := channels[v]; !ok {
-				t.Errorf("Subscriber no this event  %s", v)
-			}
+		if _, ok := hub.subscribers[client]; !ok {
+			t.Errorf("no subscribers %s", client)
 		}
-	*/
+		channels := hub.subscribers[client]
+		if _, ok := channels[v]; !ok {
+			t.Errorf("subscriber no this event  %s", v)
+		}
+	}
+}
+
+func TestUnregister(t *testing.T) {
+	for _, v := range testChannel {
+		hub.unregister(v, client)
+		if _, ok := hub.subjects[v]; ok {
+			t.Errorf("nodelete subjects %s", v)
+		}
+
+		channels := hub.subscribers[client]
+		if _, ok := channels[v]; ok {
+			t.Errorf("subscriber no delete this event  %s", v)
+		}
+	}
+	if _, ok := hub.subscribers[client]; ok {
+		t.Errorf("no delete subscribers %s", client)
+	}
 }

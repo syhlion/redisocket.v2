@@ -33,34 +33,10 @@ type EventHandler func(event string, b []byte) ([]byte, error)
 
 type ReceiveMsgHandler func([]byte) error
 
-/*
-type App interface {
-	// It client's Producer
-	NewClient(w http.ResponseWriter, r *http.Request) (*Client, error)
-
-	//It can notify All subscriber
-	Publish(subject string, data []byte) (int, error)
-
-	//A subscriber can cancel all subscriptions
-	UnregisterAll(c *Client)
-
-	//App start listen. It's blocked
-	Listen() error
-
-	//List Redis All Subject
-	ListSubject() ([]string, error)
-
-	//Count Redis Subject's subscribers
-	NumSubscriber(subject string) (int, error)
-
-	//App Close
-	Close()
-}*/
-
 //NewApp It's create a Hub
-func New(p *redis.Pool) (e *Hub) {
+func NewHub(p *redis.Pool) (e *Hub) {
 
-	e = &Hub{
+	return &Hub{
 
 		Config:      DefaultWebsocketOptional,
 		rpool:       p,
@@ -72,7 +48,6 @@ func New(p *redis.Pool) (e *Hub) {
 		closeflag:   false,
 	}
 
-	return
 }
 func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
@@ -110,10 +85,12 @@ func (a *Hub) register(event string, c *Client) (err error) {
 
 	defer a.Unlock()
 	//observer map
-	if _, ok := a.subscribers[c]; !ok {
+	if m, ok := a.subscribers[c]; !ok {
 		events := make(map[string]bool)
 		events[event] = true
 		a.subscribers[c] = events
+	} else {
+		m[event] = true
 	}
 
 	//event map
@@ -125,11 +102,6 @@ func (a *Hub) register(event string, c *Client) (err error) {
 	return
 }
 
-/*
-func (a *Hub) subscribe(event string) (err error) {
-	return a.psc.Subscribe(event)
-}
-*/
 func (a *Hub) unregister(event string, c *Client) (err error) {
 	a.Lock()
 	defer a.Unlock()
@@ -137,6 +109,9 @@ func (a *Hub) unregister(event string, c *Client) (err error) {
 	//observer map
 	if m, ok := a.subscribers[c]; ok {
 		delete(m, event)
+		if len(m) == 0 {
+			delete(a.subscribers, c)
+		}
 	}
 	//event map
 	if m, ok := a.subjects[event]; ok {
@@ -155,10 +130,6 @@ func (a *Hub) unregister(event string, c *Client) (err error) {
 	return
 }
 
-/*
-func (a *Hub) unsubscribe(event string) (err error) {
-	return a.psc.Unsubscribe(event)
-}*/
 func (a *Hub) UnregisterAll(c *Client) {
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
@@ -213,36 +184,6 @@ func (a *Hub) Listen() error {
 
 	}
 }
-
-/*
-func (a *Hub) ListSubject() (subs []string, err error) {
-	reply, err := redis.Values(a.rpool.Get().Do("PUBSUB", "CHANNELS"))
-	if err != nil {
-		return
-	}
-	if len(reply) == 0 {
-		return
-	}
-	if err = redis.ScanSlice(reply, &subs); err != nil {
-		return
-	}
-	return
-}
-func (a *Hub) NumSubscriber(subject string) (c int, err error) {
-	reply, err := redis.Values(a.rpool.Get().Do("PUBSUB", "NUMSUB", subject))
-	if err != nil {
-		return
-	}
-	if len(reply) == 0 {
-		return 0, nil
-	}
-	var channel string
-	var count int
-	if _, err = redis.Scan(reply, &channel, &count); err != nil {
-		return
-	}
-	return
-}*/
 func (a *Hub) Close() {
 	if !a.closeflag {
 		a.closeSign <- 1
