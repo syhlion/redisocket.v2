@@ -24,6 +24,11 @@ var (
 		PongWait:       60 * time.Second,
 		PingPeriod:     (60 * time.Second * 9) / 10,
 		MaxMessageSize: 512,
+		Upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     func(r *http.Request) bool { return true },
+		},
 	}
 )
 
@@ -149,8 +154,11 @@ func (a *Hub) listenRedis() <-chan error {
 			switch v := a.psc.Receive().(type) {
 			case redis.PMessage:
 				a.RLock()
-				clients := a.subjects[v.Channel]
+				clients, ok := a.subjects[v.Channel]
 				a.RUnlock()
+				if !ok {
+					continue
+				}
 				for c, _ := range clients {
 					c.Trigger(v.Channel, v.Data)
 				}
