@@ -17,7 +17,7 @@ var (
 
 func init() {
 	for _, v := range testChannel {
-		hub.register(v, client)
+		hub.Register(v, client)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestRegister(t *testing.T) {
 
 func TestUnregister(t *testing.T) {
 	for _, v := range testChannel {
-		hub.unregister(v, client)
+		hub.Unregister(v, client)
 		if _, ok := hub.subjects[v]; ok {
 			t.Errorf("nodelete subjects %s", v)
 		}

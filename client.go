@@ -21,13 +21,13 @@ func (c *Client) On(event string, h EventHandler) error {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
-	return c.hub.register(event, c)
+	return c.hub.Register(event, c)
 }
 func (c *Client) Off(event string) error {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
-	return c.hub.unregister(event, c)
+	return c.hub.Unregister(event, c)
 }
 
 func (c *Client) Trigger(event string, data []byte) (err error) {

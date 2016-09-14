@@ -10,6 +10,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+//redigo redis.Pool adapter
+type RedisManager interface {
+	Get() redis.Conn
+	ActiveCount() int
+	Close() error
+}
+
+type User interface {
+	Trigger(event string, data []byte) (err error)
+	Close()
+}
+
 type WebsocketOptional struct {
 	WriteWait      time.Duration
 	PongWait       time.Duration
@@ -39,18 +51,18 @@ type EventHandler func(event string, b []byte) ([]byte, error)
 type ReceiveMsgHandler func([]byte) error
 
 //NewApp It's create a Hub
-func NewHub(p *redis.Pool) (e *Hub) {
+func NewHub(m RedisManager) (e *Hub) {
 
 	return &Hub{
 
-		Config:      DefaultWebsocketOptional,
-		rpool:       p,
-		psc:         &redis.PubSubConn{p.Get()},
-		RWMutex:     new(sync.RWMutex),
-		subjects:    make(map[string]map[*Client]bool),
-		subscribers: make(map[*Client]map[string]bool),
-		closeSign:   make(chan int),
-		closeflag:   false,
+		Config:       DefaultWebsocketOptional,
+		redisManager: m,
+		psc:          &redis.PubSubConn{m.Get()},
+		RWMutex:      new(sync.RWMutex),
+		subjects:     make(map[string]map[User]bool),
+		subscribers:  make(map[User]map[string]bool),
+		closeSign:    make(chan int),
+		closeflag:    false,
 	}
 
 }
@@ -67,25 +79,25 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 }
 
 type Hub struct {
-	Config      WebsocketOptional
-	psc         *redis.PubSubConn
-	rpool       *redis.Pool
-	subjects    map[string]map[*Client]bool
-	subscribers map[*Client]map[string]bool
-	closeSign   chan int
-	closeflag   bool
+	Config       WebsocketOptional
+	psc          *redis.PubSubConn
+	redisManager RedisManager
+	subjects     map[string]map[User]bool
+	subscribers  map[User]map[string]bool
+	closeSign    chan int
+	closeflag    bool
 	*sync.RWMutex
 }
 
 func (a *Hub) Ping() (err error) {
-	_, err = a.rpool.Get().Do("PING")
+	_, err = a.redisManager.Get().Do("PING")
 	if err != nil {
 		return
 	}
 	return
 }
 
-func (a *Hub) register(event string, c *Client) (err error) {
+func (a *Hub) Register(event string, c User) (err error) {
 	a.Lock()
 
 	defer a.Unlock()
@@ -100,14 +112,14 @@ func (a *Hub) register(event string, c *Client) (err error) {
 
 	//event map
 	if _, ok := a.subjects[event]; !ok {
-		clients := make(map[*Client]bool)
+		clients := make(map[User]bool)
 		clients[c] = true
 		a.subjects[event] = clients
 	}
 	return
 }
 
-func (a *Hub) unregister(event string, c *Client) (err error) {
+func (a *Hub) Unregister(event string, c User) (err error) {
 	a.Lock()
 	defer a.Unlock()
 
@@ -138,7 +150,7 @@ func (a *Hub) unregister(event string, c *Client) (err error) {
 func (a *Hub) UnregisterAll(c *Client) {
 	if m, ok := a.subscribers[c]; ok {
 		for e, _ := range m {
-			a.unregister(e, c)
+			a.Unregister(e, c)
 		}
 	}
 	a.Lock()
@@ -203,9 +215,9 @@ func (a *Hub) Close() {
 
 func (e *Hub) Publish(event string, data []byte) (val int, err error) {
 
-	conn := e.rpool.Get()
+	conn := e.redisManager.Get()
 	defer conn.Close()
 	val, err = redis.Int(conn.Do("PUBLISH", event, data))
-	err = e.rpool.Get().Flush()
+	err = e.redisManager.Get().Flush()
 	return
 }
