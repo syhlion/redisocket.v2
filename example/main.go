@@ -8,7 +8,7 @@ import (
 	"github.com/syhlion/redisocket.v2"
 )
 
-func TestEvent(d []byte) (data []byte, err error) {
+func TestEvent(event string, d []byte) (data []byte, err error) {
 	return d, nil
 }
 
@@ -16,7 +16,7 @@ func main() {
 	pool := redis.NewPool(func() (redis.Conn, error) {
 		return redis.Dial("tcp", ":6379")
 	}, 10)
-	app := redisocket.NewApp(pool)
+	app := redisocket.NewHub(pool)
 
 	err := make(chan error)
 	go func() {
@@ -25,17 +25,17 @@ func main() {
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 
-		sub, err := app.NewClient(w, r)
+		client, err := app.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatal("Client Connect Error")
 			return
 		}
-		err = sub.Subscribe("Test", TestEvent)
+		err = client.On("Test", TestEvent)
 		if err != nil {
 			return
 		}
-		err = sub.Listen(func(data []byte) (err error) {
-			app.Notify("Test", []byte("Hello"))
+		err = client.Listen(func(data []byte) (err error) {
+			app.Publish("Test", []byte("Hello"))
 			return
 
 		})

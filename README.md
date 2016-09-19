@@ -11,7 +11,7 @@ Implement By Observer pattern
 
 ## Install
 
-`go get github.com/syhlion/redisocket`
+`go get github.com/syhlion/redisocket.v2`
 
 ## Usaged
 
@@ -24,7 +24,7 @@ func main() {
 	pool := redis.NewPool(func() (redis.Conn, error) {
 		return redis.Dial("tcp", ":6379")
 	}, 10)
-	app := redisocket.NewApp(pool)
+	app := redisocket.NewHub(pool)
 
 	err := make(chan error)
 	go func() {
