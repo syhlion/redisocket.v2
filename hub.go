@@ -10,12 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//redigo redis.Pool adapter
-type RedisManager interface {
-	Get() redis.Conn
-	ActiveCount() int
-	Close() error
-}
+const eventPrefix = "[redisocket.v2]:"
 
 type User interface {
 	Trigger(event string, data []byte) (err error)
@@ -51,7 +46,7 @@ type EventHandler func(event string, b []byte) ([]byte, error)
 type ReceiveMsgHandler func([]byte) error
 
 //NewApp It's create a Hub
-func NewHub(m RedisManager) (e *Hub) {
+func NewHub(m *redis.Pool) (e *Hub) {
 
 	return &Hub{
 
@@ -81,7 +76,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 type Hub struct {
 	Config       WebsocketOptional
 	psc          *redis.PubSubConn
-	redisManager RedisManager
+	redisManager *redis.Pool
 	subjects     map[string]map[User]bool
 	subscribers  map[User]map[string]bool
 	closeSign    chan int
@@ -134,12 +129,6 @@ func (a *Hub) Unregister(event string, c User) (err error) {
 	if m, ok := a.subjects[event]; ok {
 		delete(m, c)
 		if len(m) == 0 {
-			/*
-				err = a.psc.Unsubscribe(event)
-				if err != nil {
-					log.Println(err)
-					return
-				}*/
 			delete(a.subjects, event)
 		}
 	}
