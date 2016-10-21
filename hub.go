@@ -11,8 +11,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const eventPrefix = "[redisocket.v2]:"
-
 type User interface {
 	Trigger(event string, data []byte) (err error)
 	Close()
