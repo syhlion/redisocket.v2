@@ -199,11 +199,11 @@ func (a *Hub) listenRedis() <-chan error {
 					continue
 				}
 
-				a.logger("event:%s\taction:push start\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
+				a.logger("channel:%s\taction:push start\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
 				for c, _ := range clients {
 					c.Trigger(channel, v.Data)
 				}
-				a.logger("event:%s\taction:push over\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
+				a.logger("channel:%s\taction:push over\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
 
 			case error:
 				errChan <- v
