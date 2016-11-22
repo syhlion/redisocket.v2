@@ -68,7 +68,7 @@ func (s *Sender) Push(channelPrefix, event string, data []byte) (val int, err er
 //NewApp It's create a Hub
 func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
-	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.LstdFlags)
+	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
 	return &Hub{
 
 		Config:       DefaultWebsocketOptional,
@@ -117,9 +117,9 @@ func (a *Hub) Ping() (err error) {
 	}
 	return
 }
-func (a *Hub) logger(format string, msg ...interface{}) {
+func (a *Hub) logger(format string, v ...interface{}) {
 	if a.debug {
-		a.log.Printf(format, msg)
+		a.log.Printf(format, v...)
 	}
 }
 
@@ -198,6 +198,7 @@ func (a *Hub) listenRedis() <-chan error {
 				if !ok {
 					continue
 				}
+
 				a.logger("%s event push start, msg:%s ,clients:%v", channel, v.Data, len(clients))
 				for c, _ := range clients {
 					c.Trigger(channel, v.Data)
