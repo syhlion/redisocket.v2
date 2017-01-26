@@ -60,8 +60,7 @@ type Sender struct {
 func (s *Sender) Push(channelPrefix, event string, data []byte) (val int, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+event, data))
-	err = s.redisManager.Get().Flush()
+	_, err = conn.Do("PUBLISH", channelPrefix+":channels:"+event, data)
 	return
 }
 
@@ -193,12 +192,15 @@ func (a *Hub) listenRedis() <-chan error {
 			case redis.PMessage:
 
 				//過濾掉前綴
-				channel := strings.Replace(v.Channel, a.ChannelPrefix, "", 1)
+				channel := strings.Split(v.Channel, ":")
+				if channel[0] != a.ChannelPrefix {
+					continue
+				}
 
 				//過濾掉星號
-				channel = strings.Replace(channel, "*", "", 1)
+				ch := strings.Replace(channel[2], "*", "", 1)
 				a.RLock()
-				clients, ok := a.subjects[channel]
+				clients, ok := a.subjects[ch]
 				a.RUnlock()
 				if !ok {
 					continue
@@ -206,7 +208,7 @@ func (a *Hub) listenRedis() <-chan error {
 
 				a.logger("channel:%s\taction:push start\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
 				for c, _ := range clients {
-					c.Trigger(channel, v.Data)
+					c.Trigger(ch, v.Data)
 				}
 				a.logger("channel:%s\taction:push over\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
 
@@ -228,7 +230,7 @@ func (a *Hub) close() {
 }
 func (a *Hub) Listen(channelPrefix string) error {
 	a.ChannelPrefix = channelPrefix
-	a.psc.PSubscribe(channelPrefix + "*")
+	a.psc.PSubscribe(channelPrefix + ":channels:" + "*")
 	redisErr := a.listenRedis()
 	select {
 	case e := <-redisErr:
