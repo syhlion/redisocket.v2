@@ -90,6 +90,9 @@ func (c *Client) readPump() <-chan error {
 	return errChan
 
 }
+func (c *Client) Send(data []byte) (err error) {
+	return c.write(websocket.TextMessage, data)
+}
 func (c *Client) Close() {
 	c.hub.UnregisterAll(c)
 	c.ws.Close()
