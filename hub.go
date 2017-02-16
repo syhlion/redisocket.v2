@@ -158,6 +158,12 @@ func (a *Hub) Register(event string, c User) (err error) {
 	}
 	return
 }
+func (a *Hub) CountSubject() (i int) {
+	return len(a.subjects)
+}
+func (a *Hub) CountSubscriber() (i int) {
+	return len(a.subscribers)
+}
 
 func (a *Hub) Unregister(event string, c User) (err error) {
 
