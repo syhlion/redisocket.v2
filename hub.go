@@ -33,9 +33,10 @@ var (
 		PingPeriod:     (60 * time.Second * 9) / 10,
 		MaxMessageSize: 512,
 		Upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			ReadBufferSize:    1024,
+			WriteBufferSize:   1024,
+			CheckOrigin:       func(r *http.Request) bool { return true },
+			EnableCompression: true,
 		},
 	}
 )
