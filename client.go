@@ -11,7 +11,7 @@ import (
 type Client struct {
 	ws     *websocket.Conn
 	events map[string]EventHandler
-	send   chan Payload
+	send   chan *Payload
 	*sync.RWMutex
 	re  ReceiveMsgHandler
 	hub *Hub
@@ -30,7 +30,7 @@ func (c *Client) Off(event string) error {
 	return c.hub.Unregister(event, c)
 }
 
-func (c *Client) Trigger(event string, p Payload) (err error) {
+func (c *Client) Trigger(event string, p *Payload) (err error) {
 	c.RLock()
 	h, ok := c.events[event]
 	c.RUnlock()
@@ -38,17 +38,17 @@ func (c *Client) Trigger(event string, p Payload) (err error) {
 		return errors.New("No Event")
 	}
 
-	b, err := h(event, p)
+	err = h(event, p)
 
 	if err != nil {
 		return
 	}
-	c.send <- b
+	c.send <- p
 	return
 }
 
 func (c *Client) Send(data []byte) {
-	p := Payload{
+	p := &Payload{
 		Data:      data,
 		IsPrepare: false,
 	}

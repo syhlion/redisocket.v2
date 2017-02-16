@@ -14,7 +14,7 @@ import (
 )
 
 type User interface {
-	Trigger(event string, p Payload) (err error)
+	Trigger(event string, p *Payload) (err error)
 	Close()
 }
 
@@ -48,7 +48,7 @@ var (
 
 var APPCLOSE = errors.New("APP_CLOSE")
 
-type EventHandler func(event string, payload Payload) (Payload, error)
+type EventHandler func(event string, payload *Payload) error
 
 type ReceiveMsgHandler func([]byte) error
 
@@ -100,7 +100,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	c = &Client{
 		ws:      ws,
-		send:    make(chan Payload, 4096),
+		send:    make(chan *Payload, 4096),
 		RWMutex: new(sync.RWMutex),
 		hub:     e,
 		events:  make(map[string]EventHandler),
@@ -247,7 +247,7 @@ func (a *Hub) listenRedis() <-chan error {
 				if err != nil {
 					continue
 				}
-				p := Payload{
+				p := &Payload{
 					PrepareMessage: pMsg,
 					IsPrepare:      true,
 				}
