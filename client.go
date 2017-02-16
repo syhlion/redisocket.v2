@@ -60,6 +60,10 @@ func (c *Client) write(msgType int, data []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(c.hub.Config.WriteWait))
 	return c.ws.WriteMessage(msgType, data)
 }
+func (c *Client) writePreparedMessage(data *websocket.PreparedMessage) error {
+	c.ws.SetWriteDeadline(time.Now().Add(c.hub.Config.WriteWait))
+	return c.ws.WritePreparedMessage(data)
+}
 
 func (c *Client) readPump() <-chan error {
 
@@ -129,7 +133,7 @@ func (c *Client) writePump() <-chan error {
 					return
 				}
 
-				if err := c.ws.WritePreparedMessage(msg); err != nil {
+				if err := c.writePreparedMessage(msg); err != nil {
 					errChan <- err
 					close(errChan)
 					return
