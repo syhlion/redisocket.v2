@@ -97,8 +97,8 @@ func (c *Client) readPump() <-chan error {
 
 }
 func (c *Client) Close() {
-	c.hub.UnregisterAll(c)
 	c.ws.Close()
+	c.hub.UnregisterAll(c)
 	return
 }
 
@@ -120,8 +120,8 @@ func (c *Client) writePump() <-chan error {
 	go func() {
 		t := time.NewTicker(c.hub.Config.PingPeriod)
 		defer func() {
-			c.Close()
 			t.Stop()
+			c.Close()
 		}()
 		for {
 			select {
