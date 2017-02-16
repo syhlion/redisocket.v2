@@ -11,7 +11,7 @@ import (
 type Client struct {
 	ws     *websocket.Conn
 	events map[string]EventHandler
-	send   chan *websocket.PreparedMessage
+	send   chan Payload
 	*sync.RWMutex
 	re  ReceiveMsgHandler
 	hub *Hub
@@ -30,7 +30,7 @@ func (c *Client) Off(event string) error {
 	return c.hub.Unregister(event, c)
 }
 
-func (c *Client) Trigger(event string, pMsg *websocket.PreparedMessage, origin []byte) (err error) {
+func (c *Client) Trigger(event string, p Payload) (err error) {
 	c.RLock()
 	h, ok := c.events[event]
 	c.RUnlock()
@@ -38,7 +38,7 @@ func (c *Client) Trigger(event string, pMsg *websocket.PreparedMessage, origin [
 		return errors.New("No Event")
 	}
 
-	b, err := h(event, pMsg, origin)
+	b, err := h(event, p)
 
 	if err != nil {
 		return
@@ -48,11 +48,11 @@ func (c *Client) Trigger(event string, pMsg *websocket.PreparedMessage, origin [
 }
 
 func (c *Client) Send(data []byte) {
-	pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, data)
-	if err != nil {
-		return
+	p := Payload{
+		Data:      data,
+		IsPrepare: false,
 	}
-	c.send <- pMsg
+	c.send <- p
 	return
 }
 
@@ -132,11 +132,20 @@ func (c *Client) writePump() <-chan error {
 					close(errChan)
 					return
 				}
+				if msg.IsPrepare {
 
-				if err := c.writePreparedMessage(msg); err != nil {
-					errChan <- err
-					close(errChan)
-					return
+					if err := c.writePreparedMessage(msg.PrepareMessage); err != nil {
+						errChan <- err
+						close(errChan)
+						return
+					}
+				} else {
+					if err := c.write(websocket.TextMessage, msg.Data); err != nil {
+						errChan <- err
+						close(errChan)
+						return
+					}
+
 				}
 
 			case <-t.C:
