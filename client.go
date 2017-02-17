@@ -17,17 +17,20 @@ type Client struct {
 	hub *Hub
 }
 
-func (c *Client) On(event string, h EventHandler) error {
+func (c *Client) On(event string, h EventHandler) {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
-	return c.hub.Register(event, c)
+
+	c.hub.Register(event, c)
+	return
 }
-func (c *Client) Off(event string) error {
+func (c *Client) Off(event string) {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
-	return c.hub.Unregister(event, c)
+	c.hub.Unregister(event, c)
+	return
 }
 
 func (c *Client) Trigger(event string, p *Payload) (err error) {
@@ -88,13 +91,11 @@ func (c *Client) readPump() {
 		}
 		for k, v := range receiveMsg.Channels {
 			if receiveMsg.Sub {
-				err = c.On(k, v)
+				c.On(k, v)
 			} else {
-				err = c.Off(k)
+				c.Off(k)
 			}
-			if err != nil {
-				return
-			}
+
 		}
 		c.Send(receiveMsg.ResponseMsg)
 	}

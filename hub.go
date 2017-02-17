@@ -87,14 +87,22 @@ func (s *Sender) Push(channelPrefix, event string, data []byte) (val int, err er
 func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
 	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
+	pool := &Pool{
+
+		subjects:    make(map[string]map[User]bool),
+		subscribers: make(map[User]map[string]bool),
+		trigger:     make(chan *eventPayload),
+		reg:         make(chan *registerPayload),
+		unreg:       make(chan *unregisterPayload),
+		unregAll:    make(chan *unregisterAllPayload),
+		close:       make(chan int),
+	}
 	return &Hub{
 
 		Config:       DefaultWebsocketOptional,
 		redisManager: m,
 		psc:          &redis.PubSubConn{m.Get()},
-		RWMutex:      new(sync.RWMutex),
-		subjects:     make(map[string]map[User]bool),
-		subscribers:  make(map[User]map[string]bool),
+		Pool:         pool,
 		closeSign:    make(chan int),
 		closeflag:    false,
 		debug:        debug,
@@ -119,13 +127,11 @@ type Hub struct {
 	Config        WebsocketOptional
 	psc           *redis.PubSubConn
 	redisManager  *redis.Pool
-	subjects      map[string]map[User]bool
-	subscribers   map[User]map[string]bool
-	closeSign     chan int
-	closeflag     bool
-	debug         bool
-	*sync.RWMutex
-	log *log.Logger
+	*Pool
+	closeSign chan int
+	closeflag bool
+	debug     bool
+	log       *log.Logger
 }
 
 func (a *Hub) Ping() (err error) {
@@ -141,73 +147,7 @@ func (a *Hub) logger(format string, v ...interface{}) {
 	}
 }
 
-func (a *Hub) Register(event string, c User) (err error) {
-	a.Lock()
-
-	defer a.Unlock()
-	//observer map
-	if m, ok := a.subscribers[c]; !ok {
-		events := make(map[string]bool)
-		events[event] = true
-		a.subscribers[c] = events
-	} else {
-		m[event] = true
-	}
-
-	//event map
-	if clients, ok := a.subjects[event]; !ok {
-		clients := make(map[User]bool)
-		clients[c] = true
-		a.subjects[event] = clients
-	} else {
-		clients[c] = true
-	}
-	return
-}
-func (a *Hub) CountSubject() (i int) {
-	return len(a.subjects)
-}
-func (a *Hub) CountSubscriber() (i int) {
-	return len(a.subscribers)
-}
-
-func (a *Hub) Unregister(event string, c User) (err error) {
-
-	a.Lock()
-	defer a.Unlock()
-
-	//observer map
-	if m, ok := a.subscribers[c]; ok {
-		delete(m, event)
-		if len(m) == 0 {
-			delete(a.subscribers, c)
-		}
-	}
-	//event map
-	if m, ok := a.subjects[event]; ok {
-		delete(m, c)
-		if len(m) == 0 {
-			delete(a.subjects, event)
-		}
-	}
-
-	return
-}
-
-func (a *Hub) UnregisterAll(c *Client) {
-	a.Lock()
-	m, ok := a.subscribers[c]
-	a.Unlock()
-	if ok {
-		for e, _ := range m {
-			a.Unregister(e, c)
-		}
-	}
-	a.Lock()
-	delete(a.subscribers, c)
-	a.Unlock()
-	return
-}
+/*
 func (a *Hub) recordSubjcet() {
 	go func() {
 		t := time.NewTicker(time.Minute * 1)
@@ -230,6 +170,7 @@ func (a *Hub) recordSubjcet() {
 		}
 	}()
 }
+*/
 func (a *Hub) listenRedis() <-chan error {
 
 	errChan := make(chan error, 1)
@@ -243,12 +184,6 @@ func (a *Hub) listenRedis() <-chan error {
 
 				//過濾掉星號
 				channel = strings.Replace(channel, "*", "", 1)
-				a.RLock()
-				clients, ok := a.subjects[channel]
-				a.RUnlock()
-				if !ok {
-					continue
-				}
 				pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, v.Data)
 				if err != nil {
 					continue
@@ -257,12 +192,7 @@ func (a *Hub) listenRedis() <-chan error {
 					PrepareMessage: pMsg,
 					IsPrepare:      true,
 				}
-
-				a.logger("channel:%s\taction:push start\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
-				for c, _ := range clients {
-					c.Trigger(channel, p)
-				}
-				a.logger("channel:%s\taction:push over\tmsg:%s\tconnect clients:%v", channel, v.Data, len(clients))
+				a.Trigger(channel, p)
 
 			case error:
 				errChan <- v
@@ -274,32 +204,18 @@ func (a *Hub) listenRedis() <-chan error {
 	return errChan
 }
 
-func (a *Hub) close() {
-	a.closeflag = true
-	for c, _ := range a.subscribers {
-		c.Close()
-	}
-}
 func (a *Hub) Listen(channelPrefix string) error {
 	a.ChannelPrefix = channelPrefix
 	a.psc.PSubscribe(channelPrefix + "*")
-	a.recordSubjcet()
+	//a.recordSubjcet()
 	redisErr := a.listenRedis()
 	select {
 	case e := <-redisErr:
-		a.close()
 		return e
-	case <-a.closeSign:
-		a.close()
-		return APPCLOSE
-
 	}
 }
 func (a *Hub) Close() {
-	if !a.closeflag {
-		a.closeSign <- 1
-		close(a.closeSign)
-	}
+	a.Stop()
 	return
 
 }
