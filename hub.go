@@ -26,6 +26,7 @@ type Payload struct {
 
 type ReceiveMsg struct {
 	Channels    map[string]EventHandler
+	Sub         bool
 	ResponseMsg []byte
 }
 
