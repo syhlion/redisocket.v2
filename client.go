@@ -65,47 +65,40 @@ func (c *Client) writePreparedMessage(data *websocket.PreparedMessage) error {
 	return c.ws.WritePreparedMessage(data)
 }
 
-func (c *Client) readPump() <-chan error {
+func (c *Client) readPump() {
 
-	errChan := make(chan error)
-	go func() {
-		defer func() {
-			c.Close()
-		}()
-		c.ws.SetReadLimit(c.hub.Config.MaxMessageSize)
-		c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait))
-		c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait)); return nil })
-		for {
-			msgType, data, err := c.ws.ReadMessage()
-			if err != nil {
-				errChan <- err
-				close(errChan)
-				return
-			}
-			if msgType != websocket.TextMessage {
-				continue
-			}
-
-			receiveMsg, err := c.re(data)
-			if err != nil {
-				errChan <- err
-				return
-			}
-			for k, v := range receiveMsg.Channels {
-				if receiveMsg.Sub {
-					err = c.On(k, v)
-				} else {
-					err = c.Off(k)
-				}
-				if err != nil {
-					errChan <- err
-					return
-				}
-			}
-			c.Send(receiveMsg.ResponseMsg)
-		}
+	defer func() {
+		c.Close()
 	}()
-	return errChan
+	c.ws.SetReadLimit(c.hub.Config.MaxMessageSize)
+	c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait))
+	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait)); return nil })
+	for {
+		msgType, data, err := c.ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+
+		receiveMsg, err := c.re(data)
+		if err != nil {
+			return
+		}
+		for k, v := range receiveMsg.Channels {
+			if receiveMsg.Sub {
+				err = c.On(k, v)
+			} else {
+				err = c.Off(k)
+			}
+			if err != nil {
+				return
+			}
+		}
+		c.Send(receiveMsg.ResponseMsg)
+	}
+	return
 
 }
 func (c *Client) Close() {
@@ -114,62 +107,43 @@ func (c *Client) Close() {
 	return
 }
 
-func (c *Client) Listen(re ReceiveMsgHandler) (err error) {
-	defer c.Close()
+func (c *Client) Listen(re ReceiveMsgHandler) {
 	c.re = re
-	writeErr := c.writePump()
-	readErr := c.readPump()
-	select {
-	case e := <-writeErr:
-		return e
-	case e := <-readErr:
-		return e
-	}
+	go c.writePump()
+	c.readPump()
 }
 
-func (c *Client) writePump() <-chan error {
-	errChan := make(chan error)
-	go func() {
-		t := time.NewTicker(c.hub.Config.PingPeriod)
-		defer func() {
-			t.Stop()
-			c.Close()
-		}()
-		for {
-			select {
-			case msg, ok := <-c.send:
-				if !ok {
+func (c *Client) writePump() {
+	t := time.NewTicker(c.hub.Config.PingPeriod)
+	defer func() {
+		t.Stop()
+		c.ws.Close()
+	}()
+	for {
+		select {
+		case msg, ok := <-c.send:
+			if !ok {
+				return
+			}
+			if msg.IsPrepare {
 
-					errChan <- c.write(websocket.CloseMessage, []byte{})
-					close(errChan)
+				if err := c.writePreparedMessage(msg.PrepareMessage); err != nil {
 					return
 				}
-				if msg.IsPrepare {
-
-					if err := c.writePreparedMessage(msg.PrepareMessage); err != nil {
-						errChan <- err
-						close(errChan)
-						return
-					}
-				} else {
-					if err := c.write(websocket.TextMessage, msg.Data); err != nil {
-						errChan <- err
-						close(errChan)
-						return
-					}
-
-				}
-
-			case <-t.C:
-				if err := c.write(websocket.PingMessage, []byte{}); err != nil {
-					errChan <- err
-					close(errChan)
+			} else {
+				if err := c.write(websocket.TextMessage, msg.Data); err != nil {
 					return
 				}
 
 			}
+
+		case <-t.C:
+			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
+				return
+			}
+
 		}
-	}()
-	return errChan
+	}
+	return
 
 }
