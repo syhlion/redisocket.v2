@@ -147,6 +147,12 @@ func (a *Hub) logger(format string, v ...interface{}) {
 		a.log.Printf(format, v...)
 	}
 }
+func (a *Hub) CountOnlineUsers() (i int) {
+	return len(a.Pool.subscribers)
+}
+func (a *Hub) CountChannels() (i int) {
+	return len(a.Pool.subjects)
+}
 
 /*
 func (a *Hub) recordSubjcet() {

@@ -95,8 +95,8 @@ func (c *Client) readPump() {
 			} else {
 				c.Off(k)
 			}
-
 		}
+
 		c.Send(receiveMsg.ResponseMsg)
 	}
 	return
@@ -105,6 +105,7 @@ func (c *Client) readPump() {
 func (c *Client) Close() {
 	c.ws.Close()
 	c.hub.UnregisterAll(c)
+	close(c.send)
 	return
 }
 
