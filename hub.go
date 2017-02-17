@@ -24,6 +24,11 @@ type Payload struct {
 	IsPrepare      bool
 }
 
+type ReceiveMsg struct {
+	Channels    map[string]EventHandler
+	ResponseMsg []byte
+}
+
 type WebsocketOptional struct {
 	WriteWait      time.Duration
 	PongWait       time.Duration
@@ -50,7 +55,7 @@ var APPCLOSE = errors.New("APP_CLOSE")
 
 type EventHandler func(event string, payload *Payload) error
 
-type ReceiveMsgHandler func([]byte) error
+type ReceiveMsgHandler func([]byte) (*ReceiveMsg, error)
 
 func NewSender(m *redis.Pool) (e *Sender) {
 
