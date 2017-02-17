@@ -92,7 +92,11 @@ func (c *Client) readPump() <-chan error {
 				return
 			}
 			for k, v := range receiveMsg.Channels {
-				err := c.On(k, v)
+				if receiveMsg.Sub {
+					err = c.On(k, v)
+				} else {
+					err = c.Off(k)
+				}
 				if err != nil {
 					errChan <- err
 					return
