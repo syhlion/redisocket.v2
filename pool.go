@@ -114,7 +114,7 @@ func (a *Pool) unregisterAll(c User) {
 	m, ok := a.subscribers[c]
 	if ok {
 		for e, _ := range m {
-			a.Unregister(e, c)
+			a.unregister(e, c)
 		}
 	}
 	delete(a.subscribers, c)

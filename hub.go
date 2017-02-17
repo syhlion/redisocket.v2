@@ -97,6 +97,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		unregAll:    make(chan *unregisterAllPayload),
 		close:       make(chan int),
 	}
+	go pool.Run()
 	return &Hub{
 
 		Config:       DefaultWebsocketOptional,
