@@ -113,6 +113,9 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 }
 func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
+	if err != nil {
+		return
+	}
 	c = &Client{
 		ws:      ws,
 		send:    make(chan *Payload, 4096),
