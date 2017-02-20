@@ -95,7 +95,6 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		reg:         make(chan *registerPayload),
 		unreg:       make(chan *unregisterPayload),
 		unregAll:    make(chan *unregisterAllPayload),
-		close:       make(chan int),
 	}
 	go pool.Run()
 	return &Hub{
@@ -225,7 +224,6 @@ func (a *Hub) Listen(channelPrefix string) error {
 	}
 }
 func (a *Hub) Close() {
-	a.Stop()
 	return
 
 }
