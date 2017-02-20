@@ -118,7 +118,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 	}
 	c = &Client{
 		ws:      ws,
-		send:    make(chan *Payload, 4096),
+		send:    make(chan *Payload),
 		RWMutex: new(sync.RWMutex),
 		hub:     e,
 		events:  make(map[string]EventHandler),
