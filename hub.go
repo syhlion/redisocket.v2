@@ -22,12 +22,14 @@ type Payload struct {
 	Data           []byte
 	PrepareMessage *websocket.PreparedMessage
 	IsPrepare      bool
+	Event          string
 }
 
 type ReceiveMsg struct {
-	Channels    map[string]EventHandler
-	Sub         bool
-	ResponseMsg []byte
+	Event        string
+	EventHandler EventHandler
+	Sub          bool
+	ResponseMsg  []byte
 }
 
 type WebsocketOptional struct {

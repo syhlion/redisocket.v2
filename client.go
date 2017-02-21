@@ -33,17 +33,12 @@ func (c *Client) Off(event string) {
 
 func (c *Client) Trigger(event string, p *Payload) (err error) {
 	c.RLock()
-	h, ok := c.events[event]
+	_, ok := c.events[event]
 	c.RUnlock()
 	if !ok {
 		return errors.New("No Event")
 	}
 
-	err = h(event, p)
-
-	if err != nil {
-		return
-	}
 	c.send <- p
 	return
 }
@@ -93,12 +88,10 @@ func (c *Client) readPump() {
 		if err != nil {
 			return
 		}
-		for k, v := range receiveMsg.Channels {
-			if receiveMsg.Sub {
-				c.On(k, v)
-			} else {
-				c.Off(k)
-			}
+		if receiveMsg.Sub {
+			c.On(receiveMsg.Event, receiveMsg.EventHandler)
+		} else {
+			c.Off(receiveMsg.Event)
 		}
 
 		c.Send(receiveMsg.ResponseMsg)
@@ -128,6 +121,11 @@ func (c *Client) writePump() {
 		select {
 		case msg, ok := <-c.send:
 			if !ok {
+				return
+			}
+			h := c.events[msg.Event]
+			err := h(msg.Event, msg)
+			if err != nil {
 				return
 			}
 			if msg.IsPrepare {
