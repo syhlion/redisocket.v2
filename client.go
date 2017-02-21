@@ -107,6 +107,7 @@ func (c *Client) readPump() {
 
 }
 func (c *Client) Close() {
+	close(c.send)
 	c.ws.Close()
 	return
 }
