@@ -125,10 +125,13 @@ func (c *Client) writePump() {
 			if !ok {
 				return
 			}
-			h := c.events[msg.Event]
-			err := h(msg.Event, msg)
-			if err != nil {
-				return
+
+			h, ok := c.events[msg.Event]
+			if ok {
+				err := h(msg.Event, msg)
+				if err != nil {
+					return
+				}
 			}
 			if msg.IsPrepare {
 
