@@ -22,14 +22,12 @@ func (c *Client) On(event string, h EventHandler) {
 	c.events[event] = h
 	c.Unlock()
 
-	c.hub.Register(event, c)
 	return
 }
 func (c *Client) Off(event string) {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
-	c.hub.Unregister(event, c)
 	return
 }
 
@@ -71,7 +69,7 @@ func (c *Client) writePreparedMessage(data *websocket.PreparedMessage) error {
 func (c *Client) readPump() {
 
 	defer func() {
-		close(c.send)
+		c.hub.Leave(c)
 		c.Close()
 	}()
 	c.ws.SetReadLimit(c.hub.Config.MaxMessageSize)
@@ -110,7 +108,6 @@ func (c *Client) readPump() {
 }
 func (c *Client) Close() {
 	c.ws.Close()
-	c.hub.UnregisterAll(c)
 	return
 }
 
@@ -124,7 +121,7 @@ func (c *Client) writePump() {
 	t := time.NewTicker(c.hub.Config.PingPeriod)
 	defer func() {
 		t.Stop()
-		c.ws.Close()
+		c.Close()
 	}()
 	for {
 		select {
