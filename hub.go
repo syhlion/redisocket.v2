@@ -118,6 +118,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 		hub:     e,
 		events:  make(map[string]EventHandler),
 	}
+	e.Join(c)
 	return
 }
 
