@@ -88,10 +88,12 @@ func (c *Client) readPump() {
 		if err != nil {
 			return
 		}
-		if receiveMsg.Sub {
-			c.On(receiveMsg.Event, receiveMsg.EventHandler)
-		} else {
-			c.Off(receiveMsg.Event)
+		if receiveMsg.Event != "" || receiveMsg.EventHandler == nil {
+			if receiveMsg.Sub {
+				c.On(receiveMsg.Event, receiveMsg.EventHandler)
+			} else {
+				c.Off(receiveMsg.Event)
+			}
 		}
 
 		c.Send(receiveMsg.ResponseMsg)
