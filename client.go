@@ -75,18 +75,13 @@ func (c *Client) readPump() {
 	c.ws.SetReadLimit(c.hub.Config.MaxMessageSize)
 	c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait))
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(c.hub.Config.PongWait)); return nil })
-	data := make([]byte, 1024)
 	for {
-		msgType, reader, err := c.ws.NextReader()
+		msgType, data, err := c.ws.ReadMessage()
 		if err != nil {
 			return
 		}
 		if msgType != websocket.TextMessage {
 			continue
-		}
-		_, err = reader.Read(data)
-		if err != nil {
-			return
 		}
 
 		receiveMsg, err := c.re(data)
