@@ -107,7 +107,6 @@ func (c *Client) readPump() {
 
 }
 func (c *Client) Close() {
-	close(c.send)
 	c.ws.Close()
 	return
 }
@@ -123,6 +122,7 @@ func (c *Client) writePump() {
 	defer func() {
 		t.Stop()
 		c.Close()
+		close(c.send)
 	}()
 	for {
 		select {
