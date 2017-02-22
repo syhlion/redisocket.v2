@@ -105,6 +105,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		broadcast: make(chan *eventPayload),
 		join:      make(chan *Client),
 		leave:     make(chan *Client),
+		rpool:     m,
 	}
 	go pool.Run()
 	return &Hub{
