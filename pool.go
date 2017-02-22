@@ -12,11 +12,12 @@ type eventPayload struct {
 }
 
 type Pool struct {
-	users     map[*Client]bool
-	broadcast chan *eventPayload
-	join      chan *Client
-	leave     chan *Client
-	rpool     *redis.Pool
+	users         map[*Client]bool
+	broadcast     chan *eventPayload
+	join          chan *Client
+	leave         chan *Client
+	rpool         *redis.Pool
+	channelPrefix string
 }
 
 func (h *Pool) Run() {
@@ -44,14 +45,14 @@ func (h *Pool) Run() {
 			conn.Send("MULTI")
 			for u, _ := range h.users {
 				if u.uid != "" {
-					conn.Send("SADD", a.ChannelPrefix+"online", u.uid)
+					conn.Send("SADD", h.channelPrefix+"online", u.uid)
 				}
 				for e, _ := range u.events {
-					conn.Send("SADD", a.ChannelPrefix+"channels:"+e, u.uid)
-					conn.Send("EXPIRE", a.ChannelPrefix+"channels:"+e, 2*60)
+					conn.Send("SADD", h.channelPrefix+"channels:"+e, u.uid)
+					conn.Send("EXPIRE", h.channelPrefix+"channels:"+e, 2*60)
 				}
 			}
-			conn.Send("EXPIRE", a.ChannelPrefix+"online", 2*60)
+			conn.Send("EXPIRE", h.channelPrefix+"online", 2*60)
 			conn.Do("EXEC")
 			conn.Close()
 		}

@@ -78,13 +78,13 @@ func (s *Sender) GetChannels(channelPrefix string, pattern string) (channels []s
 func (s *Sender) GetOnlineByChannel(channelPrefix string, channel string) (online []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels:"+channel))
+	online, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels:"+channel))
 	return
 }
 func (s *Sender) GetOnline(channelPrefix string) (online []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"))
+	online, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"))
 	return
 }
 
@@ -124,7 +124,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 		return
 	}
 	c = &Client{
-		uid:     string,
+		uid:     uid,
 		ws:      ws,
 		send:    make(chan *Payload, 32),
 		RWMutex: new(sync.RWMutex),
@@ -219,6 +219,7 @@ func (a *Hub) listenRedis() <-chan error {
 }
 
 func (a *Hub) Listen(channelPrefix string) error {
+	a.Pool.channelPrefix = channelPrefix
 	a.ChannelPrefix = channelPrefix
 	a.psc.PSubscribe(channelPrefix + "*")
 	//a.recordSubjcet()
