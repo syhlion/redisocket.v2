@@ -11,6 +11,7 @@ import (
 )
 
 type Client struct {
+	uid    string
 	ws     *websocket.Conn
 	events map[string]EventHandler
 	send   chan *Payload

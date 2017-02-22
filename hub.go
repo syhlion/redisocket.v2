@@ -75,6 +75,12 @@ func (s *Sender) GetChannels(channelPrefix string, pattern string) (channels []s
 	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels"))
 	return
 }
+func (s *Sender) GetOnline(channelPrefix string, pattern string) (online []string, err error) {
+	conn := s.redisManager.Get()
+	defer conn.Close()
+	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"))
+	return
+}
 
 func (s *Sender) Push(channelPrefix, event string, data []byte) (val int, err error) {
 	conn := s.redisManager.Get()
@@ -106,12 +112,13 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	}
 
 }
-func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (c *Client, err error) {
+func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		return
 	}
 	c = &Client{
+		uid:     string,
 		ws:      ws,
 		send:    make(chan *Payload, 32),
 		RWMutex: new(sync.RWMutex),
