@@ -196,7 +196,7 @@ func (a *Hub) listenRedis() <-chan error {
 			case redis.PMessage:
 
 				//過濾掉前綴
-				channel := strings.Replace(v.Channel, a.ChannelPrefix, "", 1)
+				channel := strings.Replace(v.Channel, a.ChannelPrefix, "", -1)
 				//過濾掉@ 之前的字
 				sch := strings.Split(channel, "@")
 				if len(sch) != 2 {
@@ -204,7 +204,7 @@ func (a *Hub) listenRedis() <-chan error {
 				}
 
 				//過濾掉星號
-				channel = strings.Replace(sch[1], "*", "", 1)
+				channel = strings.Replace(sch[1], "*", "", -1)
 				pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, v.Data)
 				if err != nil {
 					continue
