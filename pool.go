@@ -45,11 +45,11 @@ func (h *Pool) Run() {
 			conn.Send("MULTI")
 			for u, _ := range h.users {
 				if u.uid != "" {
-					conn.Send("SADD", h.channelPrefix+"online", u.uid)
+					conn.Send("SADD", h.channelPrefix+u.prefix+"@"+"online", u.uid)
 				}
 				for e, _ := range u.events {
-					conn.Send("SADD", h.channelPrefix+"channels:"+e, u.uid)
-					conn.Send("EXPIRE", h.channelPrefix+"channels:"+e, 2*60)
+					conn.Send("SADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, u.uid)
+					conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"channels:"+e, 2*60)
 				}
 			}
 			conn.Send("EXPIRE", h.channelPrefix+"online", 2*60)

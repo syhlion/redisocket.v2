@@ -69,29 +69,29 @@ type Sender struct {
 	redisManager *redis.Pool
 }
 
-func (s *Sender) GetChannels(channelPrefix string, pattern string) (channels []string, err error) {
+func (s *Sender) GetChannels(channelPrefix string, appKey string, pattern string) (channels []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	channels, err = redis.Strings(conn.Do("keys", channelPrefix+"channels:"+pattern))
+	channels, err = redis.Strings(conn.Do("keys", channelPrefix+appKey+"@"+"channels:"+pattern))
 	return
 }
-func (s *Sender) GetOnlineByChannel(channelPrefix string, channel string) (online []string, err error) {
+func (s *Sender) GetOnlineByChannel(channelPrefix string, appKey string, channel string) (online []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	online, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels:"+channel))
+	online, err = redis.Strings(conn.Do("smembers", channelPrefix+appKey+"@"+"channels:"+channel))
 	return
 }
-func (s *Sender) GetOnline(channelPrefix string) (online []string, err error) {
+func (s *Sender) GetOnline(channelPrefix string, appKey string) (online []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	online, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"))
+	online, err = redis.Strings(conn.Do("smembers", channelPrefix+appKey+"@"+"online"))
 	return
 }
 
-func (s *Sender) Push(channelPrefix, event string, data []byte) (val int, err error) {
+func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (val int, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+event, data))
+	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+event, data))
 	return
 }
 
@@ -119,12 +119,13 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	}
 
 }
-func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string) (c *Client, err error) {
+func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string, prefix string) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		return
 	}
 	c = &Client{
+		prefix:  prefix,
 		uid:     uid,
 		ws:      ws,
 		send:    make(chan *Payload, 32),
@@ -196,9 +197,14 @@ func (a *Hub) listenRedis() <-chan error {
 
 				//過濾掉前綴
 				channel := strings.Replace(v.Channel, a.ChannelPrefix, "", 1)
+				//過濾掉@ 之前的字
+				sch := strings.Split(channel, "@")
+				if len(sch) != 2 {
+					continue
+				}
 
 				//過濾掉星號
-				channel = strings.Replace(channel, "*", "", 1)
+				channel = strings.Replace(sch[1], "*", "", 1)
 				pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, v.Data)
 				if err != nil {
 					continue
