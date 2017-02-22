@@ -45,13 +45,13 @@ func (h *Pool) Run() {
 			for u, _ := range h.users {
 				if u.uid != "" {
 					conn.Send("SADD", a.ChannelPrefix+"online", u.uid)
-					conn.Send("EXPIRE", a.ChannelPrefix+"online", 2*60)
 				}
 				for e, _ := range u.events {
-					conn.Send("SADD", a.ChannelPrefix+"channels", key)
-					conn.Send("EXPIRE", a.ChannelPrefix+"channels", 2*60)
+					conn.Send("SADD", a.ChannelPrefix+"channels:"+e, u.uid)
+					conn.Send("EXPIRE", a.ChannelPrefix+"channels:"+e, 2*60)
 				}
 			}
+			conn.Send("EXPIRE", a.ChannelPrefix+"online", 2*60)
 			conn.Do("EXEC")
 			conn.Close()
 		}

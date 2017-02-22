@@ -72,13 +72,19 @@ type Sender struct {
 func (s *Sender) GetChannels(channelPrefix string, pattern string) (channels []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels"+pattern))
+	channels, err = redis.Strings(conn.Do("keys", channelPrefix+"channels:"+pattern))
 	return
 }
-func (s *Sender) GetOnline(channelPrefix string, pattern string) (online []string, err error) {
+func (s *Sender) GetOnlineByChannel(channelPrefix string, channel string) (online []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"+pattern))
+	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"channels:"+channel))
+	return
+}
+func (s *Sender) GetOnline(channelPrefix string) (online []string, err error) {
+	conn := s.redisManager.Get()
+	defer conn.Close()
+	channels, err = redis.Strings(conn.Do("smembers", channelPrefix+"online"))
 	return
 }
 
