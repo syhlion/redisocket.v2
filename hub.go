@@ -69,6 +69,11 @@ type Sender struct {
 	redisManager *redis.Pool
 }
 
+type BatchData struct {
+	Event string
+	Data  []byte
+}
+
 func (s *Sender) GetChannels(channelPrefix string, appKey string, pattern string) (channels []string, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
@@ -85,6 +90,15 @@ func (s *Sender) GetOnline(channelPrefix string, appKey string) (online []string
 	conn := s.redisManager.Get()
 	defer conn.Close()
 	online, err = redis.Strings(conn.Do("smembers", channelPrefix+appKey+"@"+"online"))
+	return
+}
+
+func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) (val int, err error) {
+	conn := s.redisManager.Get()
+	defer conn.Close()
+	for _, d := range data {
+		val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+d.Event, d.Data))
+	}
 	return
 }
 
