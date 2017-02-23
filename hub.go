@@ -93,11 +93,11 @@ func (s *Sender) GetOnline(channelPrefix string, appKey string) (online []string
 	return
 }
 
-func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) (val int, err error) {
+func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
 	for _, d := range data {
-		val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+d.Event, d.Data))
+		conn.Do("PUBLISH", channelPrefix+appKey+"@"+d.Event, d.Data)
 	}
 	return
 }
