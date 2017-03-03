@@ -178,6 +178,10 @@ func (c *Client) writePump() {
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
 				return
 			}
+			//超過時間 都沒有事件訂閱 就斷線處理
+			if len(c.events) == 0 {
+				return
+			}
 
 		}
 	}
