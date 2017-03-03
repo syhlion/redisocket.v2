@@ -57,7 +57,8 @@ func (h *Pool) Run() {
 			conn.Do("EXEC")
 			tmp, _ := redis.Strings(conn.Do("keys", h.channelPrefix+"*"))
 			for _, k := range tmp {
-				conn.Send("ZREMRANGEBYSCORE", k, dt, nt-60)
+				conn.Do("ZREMRANGEBYSCORE", k, dt, nt-60)
+				conn.Do("EXPIRE", k, 3600)
 			}
 			conn.Close()
 		}
