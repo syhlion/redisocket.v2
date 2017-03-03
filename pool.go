@@ -52,11 +52,13 @@ func (h *Pool) Run() {
 				}
 				for e, _ := range u.events {
 					conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
-					conn.Send("ZREMRANGEBYSCORE", h.channelPrefix+u.prefix+"@"+"channels:"+e, dt, nt-60)
 				}
-				conn.Send("ZREMRANGEBYSCORE", h.channelPrefix+u.prefix+"@"+"online", dt, nt-60)
 			}
 			conn.Do("EXEC")
+			tmp, _ := redis.Strings(conn.Do("keys", h.channelPrefix+"*"))
+			for _, k := range tmp {
+				conn.Send("ZREMRANGEBYSCORE", k, dt, nt-60)
+			}
 			conn.Close()
 		}
 
