@@ -25,6 +25,18 @@ func (c *Client) On(event string, h EventHandler) {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
+	conn := c.hub.rpool.Get()
+	defer func() {
+		conn.Close()
+	}()
+	conn.Send("MULTI")
+	if c.uid != "" {
+		conn.Send("SADD", c.hub.ChannelPrefix+c.prefix+"@"+"online", c.uid)
+		conn.Send("EXPIRE", c.hub.ChannelPrefix+"online", 35)
+	}
+	conn.Send("SADD", c.hub.ChannelPrefix+c.prefix+"@"+"channels:"+event, c.uid)
+	conn.Send("EXPIRE", c.hub.ChannelPrefix+c.prefix+"@"+"channels:"+event, 35)
+	conn.Do("EXEC")
 
 	return
 }
@@ -32,6 +44,16 @@ func (c *Client) Off(event string) {
 	c.Lock()
 	delete(c.events, event)
 	c.Unlock()
+	conn := c.hub.rpool.Get()
+	defer func() {
+		conn.Close()
+	}()
+	conn.Send("MULTI")
+	if c.uid != "" {
+		conn.Send("SREM", c.hub.ChannelPrefix+c.prefix+"@"+"online", c.uid)
+	}
+	conn.Send("SREM", c.hub.ChannelPrefix+c.prefix+"@"+"channels:"+event, c.uid)
+	conn.Do("EXEC")
 	return
 }
 
