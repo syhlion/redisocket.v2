@@ -42,19 +42,20 @@ func (h *Pool) Run() {
 			}
 		case <-t.C:
 			conn := h.rpool.Get()
+			t := time.Now()
+			nt := t.Unix()
+			dt := t.Unix() - 86400
 			conn.Send("MULTI")
-			conn.Send("DEL", h.channelPrefix+u.prefix+"@"+"online")
-			conn.Send("DEL", h.channelPrefix+u.prefix+"@"+"channels:"+e)
 			for u, _ := range h.users {
 				if u.uid != "" {
-					conn.Send("SADD", h.channelPrefix+u.prefix+"@"+"online", u.uid)
+					conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"online", "CH", nt, u.uid)
 				}
 				for e, _ := range u.events {
-					conn.Send("SADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, u.uid)
-					conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"channels:"+e, 35)
+					conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
+					conn.Send("ZREMRANGEBYSCORE", h.channelPrefix+u.prefix+"@"+"channels:"+e, dt, nt-60)
 				}
+				conn.Send("ZREMRANGEBYSCORE", h.channelPrefix+u.prefix+"@"+"online", dt, nt-60)
 			}
-			conn.Send("EXPIRE", h.channelPrefix+"online", 35)
 			conn.Do("EXEC")
 			conn.Close()
 		}
