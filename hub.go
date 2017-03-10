@@ -133,7 +133,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	pool := &Pool{
 
 		users:     make(map[*Client]bool),
-		broadcast: make(chan *eventPayload, 65536),
+		broadcast: make(chan *eventPayload, 4096),
 		join:      make(chan *Client),
 		leave:     make(chan *Client),
 		kick:      make(chan string),
@@ -162,7 +162,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 		prefix:  prefix,
 		uid:     uid,
 		ws:      ws,
-		send:    make(chan *Payload, 65536),
+		send:    make(chan *Payload, 4096),
 		RWMutex: new(sync.RWMutex),
 		hub:     e,
 		events:  make(map[string]EventHandler),
