@@ -217,6 +217,8 @@ func (a *Hub) serve() <-chan error {
 					}
 				}
 				buffer.client.Send(receiveMsg.ResponseMsg)
+			} else {
+				buffer.client.Close()
 			}
 
 			buffer.Reset(nil)
