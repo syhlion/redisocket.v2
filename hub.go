@@ -1,7 +1,6 @@
 package redisocket
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -58,7 +57,7 @@ var APPCLOSE = errors.New("APP_CLOSE")
 
 type EventHandler func(event string, payload *Payload) error
 
-type ReceiveMsgHandler func(buff *bytes.Buffer, freeBufList <-chan *bytes.Buffer) (ReceiveMsg, error)
+type ReceiveMsgHandler func([]byte) (*ReceiveMsg, error)
 
 func NewSender(m *redis.Pool) (e *Sender) {
 
@@ -134,7 +133,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	pool := &Pool{
 
 		users:     make(map[*Client]bool),
-		broadcast: make(chan *eventPayload, 1024),
+		broadcast: make(chan *eventPayload, 65536),
 		join:      make(chan *Client),
 		leave:     make(chan *Client),
 		kick:      make(chan string),
@@ -142,7 +141,6 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	}
 	return &Hub{
 
-		freeBufList:  make(chan *bytes.Buffer, 100),
 		Config:       DefaultWebsocketOptional,
 		redisManager: m,
 		psc:          &redis.PubSubConn{m.Get()},
@@ -162,7 +160,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 		prefix:  prefix,
 		uid:     uid,
 		ws:      ws,
-		send:    make(chan *Payload, 1024),
+		send:    make(chan *Payload, 65536),
 		RWMutex: new(sync.RWMutex),
 		hub:     e,
 		events:  make(map[string]EventHandler),
@@ -172,7 +170,6 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 }
 
 type Hub struct {
-	freeBufList   chan *bytes.Buffer
 	ChannelPrefix string
 	Config        WebsocketOptional
 	psc           *redis.PubSubConn
