@@ -95,14 +95,14 @@ func (c *Client) readPump() {
 		var buffer *Buffer
 		select {
 		case buffer = <-c.hub.freeBuffer:
-			// Got one; nothing more to do.
+			buffer.Reset(c)
 		default:
 			// None free, so allocate a new one.
 			buffer = &Buffer{buffer: bytes.NewBuffer(make([]byte, 0, 512)), client: c}
 		}
 		_, err = io.Copy(buffer.buffer, reader)
 		if err != nil {
-			buffer.Reset()
+			buffer.Reset(nil)
 			return
 		}
 		c.hub.serveChan <- buffer

@@ -219,7 +219,7 @@ func (a *Hub) serve() <-chan error {
 				buffer.client.Send(receiveMsg.ResponseMsg)
 			}
 
-			buffer.Reset()
+			buffer.Reset(nil)
 			select {
 			case a.freeBuffer <- buffer:
 			default:

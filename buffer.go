@@ -7,7 +7,7 @@ type Buffer struct {
 	client *Client
 }
 
-func (b *Buffer) Reset() {
+func (b *Buffer) Reset(c *Client) {
 	b.buffer.Reset()
-	b.client = nil
+	b.client = c
 }
