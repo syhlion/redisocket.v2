@@ -12,21 +12,21 @@ type eventPayload struct {
 	event   string
 }
 
-type Pool struct {
-	users         map[*Client]bool
-	broadcast     chan *eventPayload
-	join          chan *Client
-	leave         chan *Client
-	shutdown      chan int
-	kick          chan string
-	freeBuffer    chan *buffer
-	serveChan     chan *buffer
-	rpool         *redis.Pool
-	channelPrefix string
-	scanInterval  time.Duration
+type pool struct {
+	users          map[*Client]bool
+	broadcastChan  chan *eventPayload
+	joinChan       chan *Client
+	leaveChan      chan *Client
+	shutdownChan   chan int
+	kickChan       chan string
+	freeBufferChan chan *buffer
+	serveChan      chan *buffer
+	rpool          *redis.Pool
+	channelPrefix  string
+	scanInterval   time.Duration
 }
 
-func (h *Pool) Run() <-chan error {
+func (h *pool) run() <-chan error {
 	errChan := make(chan error, 1)
 	go func() {
 		t := time.NewTicker(h.scanInterval)
@@ -37,15 +37,15 @@ func (h *Pool) Run() <-chan error {
 		}()
 		for {
 			select {
-			case p := <-h.broadcast:
+			case p := <-h.broadcastChan:
 				for u, _ := range h.users {
 					u.Trigger(p.event, p.payload)
 				}
-			case <-h.shutdown:
+			case <-h.shutdownChan:
 				for u, _ := range h.users {
 					u.Close()
 				}
-			case n := <-h.kick:
+			case n := <-h.kickChan:
 				for u, _ := range h.users {
 					if u.uid == n {
 						u.Close()
@@ -53,9 +53,9 @@ func (h *Pool) Run() <-chan error {
 				}
 			case b := <-h.serveChan:
 				h.serve(b)
-			case u := <-h.join:
+			case u := <-h.joinChan:
 				h.users[u] = true
-			case u := <-h.leave:
+			case u := <-h.leaveChan:
 				if _, ok := h.users[u]; ok {
 					close(u.send)
 					delete(h.users, u)
@@ -69,13 +69,13 @@ func (h *Pool) Run() <-chan error {
 	}()
 	return errChan
 }
-func (a *Pool) Shutdown() {
-	a.shutdown <- 1
+func (a *pool) shutdown() {
+	a.shutdownChan <- 1
 }
-func (a *Pool) Kick(uid string) {
-	a.kick <- uid
+func (a *pool) kick(uid string) {
+	a.kickChan <- uid
 }
-func (a *Pool) syncOnline() (err error) {
+func (a *pool) syncOnline() (err error) {
 	conn := a.rpool.Get()
 	defer conn.Close()
 	t := time.Now()
@@ -105,17 +105,17 @@ func (a *Pool) syncOnline() (err error) {
 	conn.Do("EXEC")
 	return
 }
-func (a *Pool) Broadcast(event string, p *Payload) {
-	a.broadcast <- &eventPayload{p, event}
+func (a *pool) broadcast(event string, p *Payload) {
+	a.broadcastChan <- &eventPayload{p, event}
 }
-func (a *Pool) Join(c *Client) {
-	a.join <- c
+func (a *pool) join(c *Client) {
+	a.joinChan <- c
 }
-func (a *Pool) Leave(c *Client) {
-	a.leave <- c
+func (a *pool) leave(c *Client) {
+	a.leaveChan <- c
 }
 
-func (a *Pool) serve(buffer *buffer) {
+func (a *pool) serve(buffer *buffer) {
 	receiveMsg, err := buffer.client.re(buffer.buffer.Bytes())
 	if err == nil {
 		buffer.client.Send(receiveMsg)
@@ -124,7 +124,7 @@ func (a *Pool) serve(buffer *buffer) {
 	}
 	buffer.Reset(nil)
 	select {
-	case a.freeBuffer <- buffer:
+	case a.freeBufferChan <- buffer:
 	default:
 	}
 	return
