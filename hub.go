@@ -62,10 +62,12 @@ func NewSender(m *redis.Pool) (e *Sender) {
 	}
 }
 
+//sender struct
 type Sender struct {
 	redisManager *redis.Pool
 }
 
+//push batch data struct
 type BatchData struct {
 	Event string
 	Data  []byte

@@ -118,6 +118,8 @@ func (c *Client) readPump() {
 	}
 
 }
+
+//disconnect client
 func (c *Client) Close() {
 	c.ws.Close()
 	return
