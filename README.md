@@ -37,12 +37,8 @@ func main() {
 			log.Fatal("Client Connect Error")
 			return
 		}
-		err = client.Listen(func(data []byte) (msg *redisocket.ReceiveMsg, err error) {
-		    msg = &redisocket.ReceiveMsg{}
-			msg.Sub = true
-			msg.Event = "Test"
-			msg.ResponseMsg = []byte("welcome")
-			return msg,nil
+		err = client.Listen(func(data []byte) (d []byte, err error) {
+			return data,nil
 
 		})
 		log.Println(err, "http point")
