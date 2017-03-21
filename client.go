@@ -103,14 +103,14 @@ func (c *Client) readPump() {
 		var buf *buffer
 		select {
 		case buf = <-c.hub.pool.freeBufferChan:
-			buf.Reset(c)
+			buf.reset(c)
 		default:
 			// None free, so allocate a new one.
 			buf = &buffer{buffer: bytes.NewBuffer(make([]byte, 0, c.hub.Config.MaxMessageSize)), client: c}
 		}
 		_, err = io.Copy(buf.buffer, reader)
 		if err != nil {
-			buf.Reset(nil)
+			buf.reset(nil)
 			return
 		}
 		c.hub.pool.serveChan <- buf

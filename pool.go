@@ -38,15 +38,15 @@ func (h *pool) run() <-chan error {
 		for {
 			select {
 			case p := <-h.broadcastChan:
-				for u, _ := range h.users {
+				for u := range h.users {
 					u.Trigger(p.event, p.payload)
 				}
 			case <-h.shutdownChan:
-				for u, _ := range h.users {
+				for u := range h.users {
 					u.Close()
 				}
 			case n := <-h.kickChan:
-				for u, _ := range h.users {
+				for u := range h.users {
 					if u.uid == n {
 						u.Close()
 					}
@@ -82,11 +82,11 @@ func (a *pool) syncOnline() (err error) {
 	nt := t.Unix()
 	dt := t.Unix() - 86400
 	conn.Send("MULTI")
-	for u, _ := range a.users {
+	for u := range a.users {
 		if u.uid != "" {
 			conn.Send("ZADD", a.channelPrefix+u.prefix+"@"+"online", "CH", nt, u.uid)
 		}
-		for e, _ := range u.events {
+		for e := range u.events {
 			conn.Send("ZADD", a.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
 			conn.Send("EXPIRE", a.channelPrefix+u.prefix+"@"+"channels:"+e, 300)
 		}
@@ -122,7 +122,7 @@ func (a *pool) serve(buffer *buffer) {
 	} else {
 		buffer.client.Close()
 	}
-	buffer.Reset(nil)
+	buffer.reset(nil)
 	select {
 	case a.freeBufferChan <- buffer:
 	default:
