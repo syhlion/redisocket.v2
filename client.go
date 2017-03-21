@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//gorilla websocket wrap struct
+//Client gorilla websocket wrap struct
 type Client struct {
 	prefix string
 	uid    string
@@ -22,7 +22,7 @@ type Client struct {
 	hub *Hub
 }
 
-//client on event
+//On event.  client on event
 func (c *Client) On(event string, h EventHandler) {
 	c.Lock()
 	c.events[event] = h
@@ -42,7 +42,7 @@ func (c *Client) On(event string, h EventHandler) {
 	return
 }
 
-//client off event
+//Off event. client off event
 func (c *Client) Off(event string) {
 	c.Lock()
 	delete(c.events, event)
@@ -50,7 +50,7 @@ func (c *Client) Off(event string) {
 	return
 }
 
-//trigger client reigster event
+//Trigger event. trigger client reigster event
 func (c *Client) Trigger(event string, p *Payload) (err error) {
 	c.RLock()
 	_, ok := c.events[event]
@@ -63,7 +63,7 @@ func (c *Client) Trigger(event string, p *Payload) (err error) {
 	return
 }
 
-//write msg to client
+//Send message. write msg to client
 func (c *Client) Send(data []byte) {
 	p := &Payload{
 		Data:      data,
@@ -119,12 +119,13 @@ func (c *Client) readPump() {
 
 }
 
-//disconnect client
+//Close client. disconnect client
 func (c *Client) Close() {
 	c.ws.Close()
 	return
 }
 
+//Listen client
 //client start listen
 //it's block method
 func (c *Client) Listen(re ReceiveMsgHandler) {

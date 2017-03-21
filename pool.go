@@ -69,31 +69,31 @@ func (h *pool) run() <-chan error {
 	}()
 	return errChan
 }
-func (a *pool) shutdown() {
-	a.shutdownChan <- 1
+func (h *pool) shutdown() {
+	h.shutdownChan <- 1
 }
-func (a *pool) kick(uid string) {
-	a.kickChan <- uid
+func (h *pool) kick(uid string) {
+	h.kickChan <- uid
 }
-func (a *pool) syncOnline() (err error) {
-	conn := a.rpool.Get()
+func (h *pool) syncOnline() (err error) {
+	conn := h.rpool.Get()
 	defer conn.Close()
 	t := time.Now()
 	nt := t.Unix()
 	dt := t.Unix() - 86400
 	conn.Send("MULTI")
-	for u := range a.users {
+	for u := range h.users {
 		if u.uid != "" {
-			conn.Send("ZADD", a.channelPrefix+u.prefix+"@"+"online", "CH", nt, u.uid)
+			conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"online", "CH", nt, u.uid)
 		}
 		for e := range u.events {
-			conn.Send("ZADD", a.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
-			conn.Send("EXPIRE", a.channelPrefix+u.prefix+"@"+"channels:"+e, 300)
+			conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
+			conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"channels:"+e, 300)
 		}
-		conn.Send("EXPIRE", a.channelPrefix+u.prefix+"@"+"online", 300)
+		conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"online", 300)
 	}
 	conn.Do("EXEC")
-	tmp, err := redis.Strings(conn.Do("keys", a.channelPrefix+"*"))
+	tmp, err := redis.Strings(conn.Do("keys", h.channelPrefix+"*"))
 	if err != nil {
 		return
 	}
@@ -105,17 +105,17 @@ func (a *pool) syncOnline() (err error) {
 	conn.Do("EXEC")
 	return
 }
-func (a *pool) broadcast(event string, p *Payload) {
-	a.broadcastChan <- &eventPayload{p, event}
+func (h *pool) broadcast(event string, p *Payload) {
+	h.broadcastChan <- &eventPayload{p, event}
 }
-func (a *pool) join(c *Client) {
-	a.joinChan <- c
+func (h *pool) join(c *Client) {
+	h.joinChan <- c
 }
-func (a *pool) leave(c *Client) {
-	a.leaveChan <- c
+func (h *pool) leave(c *Client) {
+	h.leaveChan <- c
 }
 
-func (a *pool) serve(buffer *buffer) {
+func (h *pool) serve(buffer *buffer) {
 	receiveMsg, err := buffer.client.re(buffer.buffer.Bytes())
 	if err == nil {
 		buffer.client.Send(receiveMsg)
@@ -124,7 +124,7 @@ func (a *pool) serve(buffer *buffer) {
 	}
 	buffer.reset(nil)
 	select {
-	case a.freeBufferChan <- buffer:
+	case h.freeBufferChan <- buffer:
 	default:
 	}
 	return
