@@ -126,8 +126,8 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
 	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
 	pool := &Pool{
-		freeBuffer: make(chan *Buffer, 100),
-		serveChan:  make(chan *Buffer),
+		freeBuffer: make(chan *buffer, 100),
+		serveChan:  make(chan *buffer),
 		users:      make(map[*Client]bool),
 		broadcast:  make(chan *eventPayload, 4096),
 		join:       make(chan *Client),

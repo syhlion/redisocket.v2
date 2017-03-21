@@ -94,20 +94,20 @@ func (c *Client) readPump() {
 		if msgType != websocket.TextMessage {
 			continue
 		}
-		var buffer *Buffer
+		var buf *buffer
 		select {
-		case buffer = <-c.hub.Pool.freeBuffer:
-			buffer.Reset(c)
+		case buf = <-c.hub.Pool.freeBuffer:
+			buf.Reset(c)
 		default:
 			// None free, so allocate a new one.
-			buffer = &Buffer{buffer: bytes.NewBuffer(make([]byte, 0, c.hub.Config.MaxMessageSize)), client: c}
+			buf = &buffer{buffer: bytes.NewBuffer(make([]byte, 0, c.hub.Config.MaxMessageSize)), client: c}
 		}
-		_, err = io.Copy(buffer.buffer, reader)
+		_, err = io.Copy(buf.buffer, reader)
 		if err != nil {
-			buffer.Reset(nil)
+			buf.Reset(nil)
 			return
 		}
-		c.hub.Pool.serveChan <- buffer
+		c.hub.Pool.serveChan <- buf
 
 	}
 

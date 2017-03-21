@@ -19,8 +19,8 @@ type Pool struct {
 	leave         chan *Client
 	shutdown      chan int
 	kick          chan string
-	freeBuffer    chan *Buffer
-	serveChan     chan *Buffer
+	freeBuffer    chan *buffer
+	serveChan     chan *buffer
 	rpool         *redis.Pool
 	channelPrefix string
 	scanInterval  time.Duration
@@ -115,7 +115,7 @@ func (a *Pool) Leave(c *Client) {
 	a.leave <- c
 }
 
-func (a *Pool) serve(buffer *Buffer) {
+func (a *Pool) serve(buffer *buffer) {
 	receiveMsg, err := buffer.client.re(buffer.buffer.Bytes())
 	if err == nil {
 		buffer.client.Send(receiveMsg)
