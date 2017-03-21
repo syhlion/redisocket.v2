@@ -1,5 +1,7 @@
 # redisocket.v2
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/syhlion/redisocket.v2)](https://goreportcard.com/report/github.com/syhlion/redisocket.v2)
+
 Base on gorilla/websocket & garyburd/redigo
 
 Implement By Observer pattern
