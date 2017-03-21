@@ -110,7 +110,6 @@ func (c *Client) readPump() {
 		c.hub.Pool.serveChan <- buffer
 
 	}
-	return
 
 }
 func (c *Client) Close() {
@@ -171,6 +170,5 @@ func (c *Client) writePump() {
 
 		}
 	}
-	return
 
 }
