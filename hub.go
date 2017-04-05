@@ -146,6 +146,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		joinChan:       make(chan *Client),
 		leaveChan:      make(chan *Client),
 		kickChan:       make(chan string),
+		shutdownChan:   make(chan int, 1),
 		rpool:          m,
 	}
 	return &Hub{
