@@ -12,9 +12,9 @@ type eventPayload struct {
 	payload *Payload
 	event   string
 }
-type UserPayload struct {
-	uid  string      `json:"uid"`
-	data interface{} `json:"data"`
+type userPayload struct {
+	Uid  string      `json:"uid"`
+	Data interface{} `json:"data"`
 }
 
 type pool struct {
@@ -26,7 +26,7 @@ type pool struct {
 	kickChan       chan string
 	freeBufferChan chan *buffer
 	serveChan      chan *buffer
-	specifyChan    chan *UserPayload
+	specifyChan    chan *userPayload
 	rpool          *redis.Pool
 	channelPrefix  string
 	scanInterval   time.Duration
@@ -59,8 +59,8 @@ func (h *pool) run() <-chan error {
 				}
 			case n := <-h.specifyChan:
 				for u := range h.users {
-					if u.uid == n.uid {
-						b, err := json.Marshal(n.data)
+					if u.uid == n.Uid {
+						b, err := json.Marshal(n.Data)
 						if err != nil {
 							continue
 						}
@@ -85,7 +85,7 @@ func (h *pool) run() <-chan error {
 	}()
 	return errChan
 }
-func (h *pool) toUser(u *UserPayload) {
+func (h *pool) toUser(u *userPayload) {
 	h.specifyChan <- u
 }
 func (h *pool) shutdown() {
