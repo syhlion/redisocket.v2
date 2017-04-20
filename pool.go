@@ -26,7 +26,7 @@ type pool struct {
 	kickChan       chan string
 	freeBufferChan chan *buffer
 	serveChan      chan *buffer
-	specifyChan    chan *userPayload
+	specifyChan    chan *UserPayload
 	rpool          *redis.Pool
 	channelPrefix  string
 	scanInterval   time.Duration
@@ -85,7 +85,7 @@ func (h *pool) run() <-chan error {
 	}()
 	return errChan
 }
-func (h *pool) toUser(u *userPayload) {
+func (h *pool) toUser(u *UserPayload) {
 	h.specifyChan <- u
 }
 func (h *pool) shutdown() {

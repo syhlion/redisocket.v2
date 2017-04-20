@@ -131,7 +131,7 @@ func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 func (s *Sender) PushTo(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	u := userPayload{
+	u := UserPayload{
 		uid:  uid,
 		data: data,
 	}
@@ -163,7 +163,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		joinChan:       make(chan *Client),
 		leaveChan:      make(chan *Client),
 		kickChan:       make(chan string),
-		specifyChan:    make(chan *userPayload, 100),
+		specifyChan:    make(chan *UserPayload, 100),
 		shutdownChan:   make(chan int, 1),
 		rpool:          m,
 	}
@@ -248,7 +248,7 @@ func (e *Hub) listenRedis() <-chan error {
 				//過濾掉星號
 				channel = strings.Replace(sch[1], "*", "", -1)
 				if channel == "#GUSHERFUNC#" {
-					up := &userPayload{}
+					up := &UserPayload{}
 					err := json.Unmarshal(v.Data, up)
 					if err != nil {
 						continue
