@@ -12,7 +12,7 @@ type eventPayload struct {
 	payload *Payload
 	event   string
 }
-type userPayload struct {
+type UserPayload struct {
 	uid  string      `json:"uid"`
 	data interface{} `json:"data"`
 }
