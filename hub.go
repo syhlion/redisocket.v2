@@ -128,7 +128,7 @@ func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 }
 
 //PushTo  push to user socket
-func (s *Sender) PushTo(channelPrefix, appKey string, uid string, data []byte) (val int, err error) {
+func (s *Sender) PushTo(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
 	u := userPayload{

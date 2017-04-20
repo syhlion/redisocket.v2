@@ -1,6 +1,7 @@
 package redisocket
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -12,8 +13,8 @@ type eventPayload struct {
 	event   string
 }
 type userPayload struct {
-	uid  string `json:"uid"`
-	data []byte `json:"data"`
+	uid  string      `json:"uid"`
+	data interface{} `json:"data"`
 }
 
 type pool struct {
@@ -59,7 +60,11 @@ func (h *pool) run() <-chan error {
 			case n := <-h.specifyChan:
 				for u := range h.users {
 					if u.uid == n.uid {
-						u.Send(n.data)
+						b, err := json.Marshal(n.data)
+						if err != nil {
+							continue
+						}
+						u.Send(b)
 					}
 				}
 			case b := <-h.serveChan:
