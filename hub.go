@@ -131,7 +131,7 @@ func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 func (s *Sender) PushTo(channelPrefix, appKey string, uid string, data []byte) (val int, err error) {
 	conn := s.redisManager.Get()
 	defer conn.Close()
-	u := &userPayload{
+	u := userPayload{
 		uid:  uid,
 		data: data,
 	}
