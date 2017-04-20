@@ -132,7 +132,9 @@ func (h *pool) leave(c *Client) {
 func (h *pool) serve(buffer *buffer) {
 	receiveMsg, err := buffer.client.re(buffer.buffer.Bytes())
 	if err == nil {
-		buffer.client.Send(receiveMsg)
+		if len(receiveMsg) > 0 {
+			buffer.client.Send(receiveMsg)
+		}
 	} else {
 		buffer.client.Close()
 	}
