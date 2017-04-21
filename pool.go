@@ -12,24 +12,29 @@ type eventPayload struct {
 	payload *Payload
 	event   string
 }
+type socketPayload struct {
+	Sid  string      `json:"sid"`
+	Data interface{} `json:"data"`
+}
 type userPayload struct {
 	Uid  string      `json:"uid"`
 	Data interface{} `json:"data"`
 }
 
 type pool struct {
-	users          map[*Client]bool
-	broadcastChan  chan *eventPayload
-	joinChan       chan *Client
-	leaveChan      chan *Client
-	shutdownChan   chan int
-	kickChan       chan string
-	freeBufferChan chan *buffer
-	serveChan      chan *buffer
-	specifyChan    chan *userPayload
-	rpool          *redis.Pool
-	channelPrefix  string
-	scanInterval   time.Duration
+	users             map[*Client]bool
+	broadcastChan     chan *eventPayload
+	joinChan          chan *Client
+	leaveChan         chan *Client
+	shutdownChan      chan int
+	kickChan          chan string
+	freeBufferChan    chan *buffer
+	serveChan         chan *buffer
+	userPayloadChan   chan *userPayload
+	socketPayloadChan chan *socketPayload
+	rpool             *redis.Pool
+	channelPrefix     string
+	scanInterval      time.Duration
 }
 
 func (h *pool) run() <-chan error {
@@ -57,9 +62,19 @@ func (h *pool) run() <-chan error {
 						u.Close()
 					}
 				}
-			case n := <-h.specifyChan:
+			case n := <-h.userPayloadChan:
 				for u := range h.users {
 					if u.uid == n.Uid {
+						b, err := json.Marshal(n.Data)
+						if err != nil {
+							continue
+						}
+						u.Send(b)
+					}
+				}
+			case n := <-h.socketPayloadChan:
+				for u := range h.users {
+					if u.sid == n.Sid {
 						b, err := json.Marshal(n.Data)
 						if err != nil {
 							continue
@@ -85,8 +100,11 @@ func (h *pool) run() <-chan error {
 	}()
 	return errChan
 }
-func (h *pool) toUser(u *userPayload) {
-	h.specifyChan <- u
+func (h *pool) toUid(u *userPayload) {
+	h.userPayloadChan <- u
+}
+func (h *pool) toSid(u *socketPayload) {
+	h.socketPayloadChan <- u
 }
 func (h *pool) shutdown() {
 	h.shutdownChan <- 1
