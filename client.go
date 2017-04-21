@@ -152,7 +152,9 @@ func (c *Client) writePump() {
 				return
 			}
 
+			c.RLock()
 			h, ok := c.events[msg.Event]
+			c.RUnlock()
 			if ok {
 				if h != nil {
 					err := h(msg.Event, msg)
