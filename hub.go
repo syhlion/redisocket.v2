@@ -148,7 +148,7 @@ func (s *Sender) PushToSid(channelPrefix, appKey string, uid string, data interf
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOUID#", d))
+	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOSID#", d))
 	return
 }
 
@@ -164,7 +164,7 @@ func (s *Sender) PushToUid(channelPrefix, appKey string, uid string, data interf
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOSID#", d))
+	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOUID#", d))
 	return
 }
 
