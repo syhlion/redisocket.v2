@@ -1,0 +1,31 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "2UmMbNHc8FBr98mJFN1k8ISOIHk=",
+			"path": "github.com/garyburd/redigo/internal",
+			"revision": "b389d5392e340092642eec4e36754e0280ad1f8e",
+			"revisionTime": "2017-11-27T19:16:32Z"
+		},
+		{
+			"checksumSHA1": "YdFePCOhDZ/jM44yDKwRaOKJM0g=",
+			"path": "github.com/garyburd/redigo/redis",
+			"revision": "b389d5392e340092642eec4e36754e0280ad1f8e",
+			"revisionTime": "2017-11-27T19:16:32Z"
+		},
+		{
+			"checksumSHA1": "hEnH6sgR83Qfx7UNnphNNlelmj0=",
+			"path": "github.com/gorilla/websocket",
+			"revision": "a91eba7f97777409bc2c443f5534d41dd20c5720",
+			"revisionTime": "2017-03-19T17:27:27Z"
+		},
+		{
+			"checksumSHA1": "zmC8/3V4ls53DJlNTKDZwPSC/dA=",
+			"path": "github.com/satori/go.uuid",
+			"revision": "5bf94b69c6b68ee1b541973bb8e1144db23a194b",
+			"revisionTime": "2017-03-21T23:07:31Z"
+		}
+	],
+	"rootPath": "github.com/syhlion/redisocket.v2"
+}
