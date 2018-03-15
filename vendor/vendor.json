@@ -9,10 +9,16 @@
 			"revisionTime": "2017-11-27T19:16:32Z"
 		},
 		{
-			"checksumSHA1": "YdFePCOhDZ/jM44yDKwRaOKJM0g=",
-			"path": "github.com/garyburd/redigo/redis",
-			"revision": "b389d5392e340092642eec4e36754e0280ad1f8e",
-			"revisionTime": "2017-11-27T19:16:32Z"
+			"checksumSHA1": "w3QCCIYHgZzIXQ+xTl7oLfFrXHs=",
+			"path": "github.com/gomodule/redigo/internal",
+			"revision": "9c11da706d9b7902c6da69c592f75637793fe121",
+			"revisionTime": "2018-03-14T22:34:43Z"
+		},
+		{
+			"checksumSHA1": "HgOVOUtWUYHcNe8aipwuEZ7YLow=",
+			"path": "github.com/gomodule/redigo/redis",
+			"revision": "9c11da706d9b7902c6da69c592f75637793fe121",
+			"revisionTime": "2018-03-14T22:34:43Z"
 		},
 		{
 			"checksumSHA1": "hEnH6sgR83Qfx7UNnphNNlelmj0=",
