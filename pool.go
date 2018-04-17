@@ -84,9 +84,11 @@ func (h *pool) run() <-chan error {
 					}
 				}
 			case u := <-h.joinChan:
+				statistic.AddMem()
 				h.users[u] = true
 			case u := <-h.leaveChan:
 				if _, ok := h.users[u]; ok {
+					statistic.SubMem()
 					close(u.send)
 					delete(h.users, u)
 				}

@@ -17,17 +17,6 @@ import (
 
 var statistic *Statistic
 
-func init() {
-
-	statistic = &Statistic{
-		inMemChannel:  make(chan int),
-		outMemChannel: make(chan int),
-		inMsgChannel:  make(chan int),
-		outMsgChannel: make(chan int),
-	}
-	go statistic.Run()
-}
-
 //User client interface
 type User interface {
 	Trigger(event string, p *Payload) (err error)
@@ -194,6 +183,14 @@ func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (
 func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
 	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
+	statistic = &Statistic{
+		inMemChannel:  make(chan int),
+		outMemChannel: make(chan int),
+		inMsgChannel:  make(chan int),
+		outMsgChannel: make(chan int),
+		l:             l,
+	}
+	go statistic.Run()
 	pool := &pool{
 		users:         make(map[*Client]bool),
 		broadcastChan: make(chan *eventPayload, 4096),

@@ -17,6 +17,7 @@ type Statistic struct {
 	inMsgChannel  chan int
 	outMsgChannel chan int
 	lastFlushTime time.Time
+	l             *log.Logger
 }
 
 func (s *Statistic) AddMem() {
@@ -75,5 +76,6 @@ func (s *Statistic) Run() {
 	}
 }
 func (s *Statistic) Flush(t time.Time) {
-	log.Printf("[redisocket.v2] message in %d, byte %d,message out %d, byte %d, member in %d, member out %d", s.inMsg, s.inByte, s.outMsg, s.outByte, s.inMem, s.outMem)
+
+	s.l.Printf("message in %d, byte %d,message out %d, byte %d, member in %d, member out %d", s.inMsg, s.inByte, s.outMsg, s.outByte, s.inMem, s.outMem)
 }
