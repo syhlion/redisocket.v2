@@ -15,6 +15,19 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var statistic *Statistic
+
+func init() {
+
+	statistic = &Statistic{
+		inMemChannel:  make(chan int),
+		outMemChannel: make(chan int),
+		inMsgChannel:  make(chan int),
+		outMsgChannel: make(chan int),
+	}
+	go statistic.Run()
+}
+
 //User client interface
 type User interface {
 	Trigger(event string, p *Payload) (err error)
@@ -23,6 +36,7 @@ type User interface {
 
 //Payload reciev from redis
 type Payload struct {
+	Len            int
 	Data           []byte
 	PrepareMessage *websocket.PreparedMessage
 	IsPrepare      bool
@@ -198,6 +212,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 		pool:           pool,
 	}
 	mq.run()
+
 	return &Hub{
 
 		messageQuene: mq,
@@ -314,6 +329,7 @@ func (e *Hub) listenRedis() <-chan error {
 					continue
 				}
 				p := &Payload{
+					Len:            len(v.Data),
 					PrepareMessage: pMsg,
 					IsPrepare:      true,
 				}

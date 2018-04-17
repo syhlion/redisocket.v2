@@ -35,6 +35,8 @@ type pool struct {
 	rpool         *redis.Pool
 	channelPrefix string
 	scanInterval  time.Duration
+	msgTotal      int64
+	msgByteSum    int64
 }
 
 func (h *pool) run() <-chan error {
