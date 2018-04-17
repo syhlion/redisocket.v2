@@ -184,10 +184,10 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
 	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
 	statistic = &Statistic{
-		inMemChannel:  make(chan int),
-		outMemChannel: make(chan int),
-		inMsgChannel:  make(chan int),
-		outMsgChannel: make(chan int),
+		inMemChannel:  make(chan int, 8192),
+		outMemChannel: make(chan int, 8192),
+		inMsgChannel:  make(chan int, 8192),
+		outMsgChannel: make(chan int, 8192),
 		l:             l,
 	}
 	go statistic.Run()
