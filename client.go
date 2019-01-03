@@ -111,7 +111,6 @@ func (c *Client) readPump() {
 	for {
 		msgType, reader, err := c.ws.NextReader()
 		if err != nil {
-			c.hub.log.Println("[redisocket.v2] msg read error", err)
 			return
 		}
 		if msgType != websocket.TextMessage {
@@ -129,7 +128,6 @@ func (c *Client) readPump() {
 		_, err = io.Copy(buf.buffer, reader)
 		if err != nil {
 			buf.reset(nil)
-			c.hub.log.Println("[redisocket.v2] buffer copy error", err)
 			return
 		}
 		statistic.AddInMsg(buf.buffer.Len())

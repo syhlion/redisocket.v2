@@ -182,7 +182,7 @@ func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (
 }
 
 //NewHub It's create a Hub
-func NewHub(m *redis.Pool, maxMessageSize int64, debug bool) (e *Hub) {
+func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 
 	l := log.New(os.Stdout, "[redisocket.v2]", log.Lshortfile|log.Ldate|log.Lmicroseconds)
 	statistic = &Statistic{
@@ -211,9 +211,6 @@ func NewHub(m *redis.Pool, maxMessageSize int64, debug bool) (e *Hub) {
 		pool:           pool,
 	}
 	mq.run()
-
-	//覆蓋 default 預設 MaxMessageSize
-	DefaultWebsocketOptional.MaxMessageSize = maxMessageSize
 
 	return &Hub{
 
