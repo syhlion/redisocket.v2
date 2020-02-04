@@ -34,10 +34,10 @@ func (c *Client) SetChannels(s []string) {
 	c.auth.Channels = s
 }
 
-func (c *Client) GetChannels() []string {
+func (c *Client) GetAuth() Auth {
 	c.RLock()
 	defer c.RUnlock()
-	return c.auth.Channels
+	return *c.auth
 }
 
 //On event.  client on event
