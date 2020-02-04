@@ -247,7 +247,7 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 }
 
 //Upgrade gorilla websocket wrap upgrade method
-func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string, prefix string) (c *Client, err error) {
+func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string, prefix string, auth *Auth) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		return
@@ -262,6 +262,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 		RWMutex: new(sync.RWMutex),
 		hub:     e,
 		events:  make(map[string]EventHandler),
+		auth:    auth,
 	}
 	e.join(c)
 	return
