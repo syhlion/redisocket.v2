@@ -19,12 +19,25 @@ type Client struct {
 	events map[string]EventHandler
 	send   chan *Payload
 	*sync.RWMutex
-	re  ReceiveMsgHandler
-	hub *Hub
+	re   ReceiveMsgHandler
+	hub  *Hub
+	auth *Auth
 }
 
 func (c *Client) SocketId() string {
 	return c.sid
+}
+
+func (c *Client) SetChannels(s []string) {
+	c.Lock()
+	defer c.Unlock()
+	c.auth.Channels = s
+}
+
+func (c *Client) GetChannels() []string {
+	c.RLock()
+	defer c.RUnlock()
+	return c.auth.Channels
 }
 
 //On event.  client on event
