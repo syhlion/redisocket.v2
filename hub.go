@@ -214,16 +214,17 @@ func NewHub(m *redis.Pool, debug bool) (e *Hub) {
 	}
 	go statistic.Run()
 	pool := &pool{
-		users:         make(map[*Client]bool),
-		broadcastChan: make(chan *eventPayload, 4096),
-		joinChan:      make(chan *Client),
-		leaveChan:     make(chan *Client),
-		kickSidChan:   make(chan string),
-		kickUidChan:   make(chan string),
-		uPayloadChan:  make(chan *uPayload, 4096),
-		sPayloadChan:  make(chan *sPayload, 4096),
-		shutdownChan:  make(chan int, 1),
-		rpool:         m,
+		users:              make(map[*Client]bool),
+		broadcastChan:      make(chan *eventPayload, 4096),
+		joinChan:           make(chan *Client),
+		leaveChan:          make(chan *Client),
+		kickSidChan:        make(chan string),
+		kickUidChan:        make(chan string),
+		uPayloadChan:       make(chan *uPayload, 4096),
+		uReloadChannelChan: make(chan *uReloadChannelPayload, 4096),
+		sPayloadChan:       make(chan *sPayload, 4096),
+		shutdownChan:       make(chan int, 1),
+		rpool:              m,
 	}
 	mq := &messageQuene{
 		freeBufferChan: make(chan *buffer, 8192),
