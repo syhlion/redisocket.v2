@@ -1,28 +1,26 @@
 package redisocket
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-//User client interface
+// User client interface
 type User interface {
 	Trigger(event string, p *Payload) (err error)
 	Close()
 }
 
-//Payload reciev from redis
+// Payload reciev from redis
 type Payload struct {
 	Len            int
 	Data           []byte
@@ -31,7 +29,7 @@ type Payload struct {
 	Event          string
 }
 
-//WebsocketOptional  init websocket hub config
+// WebsocketOptional  init websocket hub config
 type WebsocketOptional struct {
 	ScanInterval   time.Duration
 	WriteWait      time.Duration
@@ -71,77 +69,49 @@ var (
 	}
 )
 
-//EventHandler event handler
+// EventHandler event handler
 type EventHandler func(event string, payload *Payload) error
 
-//ReceiveMsgHandler client receive msg
+// ReceiveMsgHandler client receive msg
 type ReceiveMsgHandler func([]byte) ([]byte, error)
 
-//NewSender return sender  send to hub
+// NewSender return sender  send to hub
 func NewSender(m *redis.Pool) (e *Sender) {
 
 	return &Sender{
-		redisManager: m,
-		broker:       newRedisBroker(m),
+		broker:   newRedisBroker(m),
+		presence: newRedisPresence(m),
 	}
 }
 
-//Sender struct
-//
-// 註:publish 走 broker(可換 NATS);redisManager 暫留給 presence 查詢
-// (GetChannels/GetOnline*),待 Phase C 抽 Presence 後移除。
+// Sender struct(publish 走 broker、presence 查詢走 presence;兩者皆可換後端)
 type Sender struct {
-	redisManager *redis.Pool
-	broker       Broker
+	broker   Broker
+	presence Presence
 }
 
-//BatchData push batch data struct
+// BatchData push batch data struct
 type BatchData struct {
 	Event string
 	Data  []byte
 }
 
-//GetChannels get all sub channels
+// GetChannels get all sub channels
 func (s *Sender) GetChannels(channelPrefix string, appKey string, pattern string) (channels []string, err error) {
-	keyPrefix := fmt.Sprintf("%s%s@channels:", channelPrefix, appKey)
-	conn := s.redisManager.Get()
-	defer conn.Close()
-	tmp, err := redis.Strings(conn.Do("keys", keyPrefix+pattern))
-	channels = make([]string, 0)
-	for _, v := range tmp {
-		channel := strings.Replace(v, keyPrefix, "", -1)
-		if channel == "" {
-			continue
-		}
-		channels = append(channels, channel)
-	}
-
-	return
+	return s.presence.Channels(channelPrefix, appKey, pattern)
 }
 
-//GetOnlineByChannel get all online user by  channel
+// GetOnlineByChannel get all online user by  channel
 func (s *Sender) GetOnlineByChannel(channelPrefix string, appKey string, channel string) (online []string, err error) {
-	memberKey := fmt.Sprintf("%s%s@channels:%s", channelPrefix, appKey, channel)
-	conn := s.redisManager.Get()
-	defer conn.Close()
-	nt := time.Now().Unix()
-	dt := nt - 120
-	online, err = redis.Strings(conn.Do("ZRANGEBYSCORE", memberKey, dt, nt))
-	return
+	return s.presence.OnlineByChannel(channelPrefix, appKey, channel)
 }
 
-//GetOnline get all online user
+// GetOnline get all online user
 func (s *Sender) GetOnline(channelPrefix string, appKey string) (online []string, err error) {
-	memberKey := fmt.Sprintf("%s%s@online", channelPrefix, appKey)
-	conn := s.redisManager.Get()
-	defer conn.Close()
-	nt := time.Now().Unix()
-	dt := nt - 120
-	online, err = redis.Strings(conn.Do("ZRANGEBYSCORE", memberKey, dt, nt))
-	return
+	return s.presence.Online(channelPrefix, appKey)
 }
 
-//PushBatch push batch data
+// PushBatch push batch data
 func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 	for _, d := range data {
 		s.broker.Publish(channelPrefix, appKey, d.Event, d.Data)
@@ -149,7 +119,7 @@ func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
 	return
 }
 
-//PushToSid  push to user socket id
+// PushToSid  push to user socket id
 func (s *Sender) PushToSid(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
 	u := socketPayload{
 		Sid:  uid,
@@ -163,7 +133,7 @@ func (s *Sender) PushToSid(channelPrefix, appKey string, uid string, data interf
 	return
 }
 
-//PushTo  push to user socket
+// PushTo  push to user socket
 func (s *Sender) PushToUid(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
 	u := userPayload{
 		Uid:  uid,
@@ -177,7 +147,7 @@ func (s *Sender) PushToUid(channelPrefix, appKey string, uid string, data interf
 	return
 }
 
-//ReloadChannel  reload user channel list
+// ReloadChannel  reload user channel list
 func (s *Sender) ReloadChannel(channelPrefix, appKey string, uid string, channels []string) (val int, err error) {
 	u := reloadChannelPayload{
 		Uid:      uid,
@@ -191,7 +161,7 @@ func (s *Sender) ReloadChannel(channelPrefix, appKey string, uid string, channel
 	return
 }
 
-//AddChannel  append channel to user channel list
+// AddChannel  append channel to user channel list
 func (s *Sender) AddChannel(channelPrefix, appKey string, uid string, channel string) (val int, err error) {
 	u := addChannelPayload{
 		Uid:     uid,
@@ -205,19 +175,19 @@ func (s *Sender) AddChannel(channelPrefix, appKey string, uid string, channel st
 	return
 }
 
-//Push push single data
+// Push push single data
 func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (val int, err error) {
 	return s.broker.Publish(channelPrefix, appKey, event, data)
 }
 
-//NewHub It's create a Hub (Redis 後端:bus 與 presence 都用同一個 redis pool)
+// NewHub It's create a Hub (Redis 後端:bus 與 presence 都用同一個 redis pool)
 func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 	return NewHubWithBroker(newRedisBroker(m), m, log, debug)
 }
 
-//NewHubWithBroker 注入 bus 後端(broker),presence 仍用 presencePool。
-//可用於以 NATS broker + redis presence 組合(Phase B);presence 抽離後
-//(Phase C)presencePool 將可為 nil。
+// NewHubWithBroker 注入 bus 後端(broker),presence 仍用 presencePool。
+// 可用於以 NATS broker + redis presence 組合(Phase B);presence 抽離後
+// (Phase C)presencePool 將可為 nil。
 func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
 	stat := &Statistic{
@@ -241,7 +211,7 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 		uAddChannelChan:    make(chan *uAddChannelPayload, 4096),
 		sPayloadChan:       make(chan *sPayload, 4096),
 		shutdownChan:       make(chan int, 1),
-		rpool:              presencePool,
+		presence:           newRedisPresence(presencePool),
 	}
 	mq := &messageQuene{
 		freeBufferChan: make(chan *buffer, 8192),
@@ -264,7 +234,7 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 
 }
 
-//Upgrade gorilla websocket wrap upgrade method
+// Upgrade gorilla websocket wrap upgrade method
 func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, uid string, prefix string, auth *Auth) (c *Client, err error) {
 	ws, err := e.Config.Upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
@@ -286,7 +256,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 	return
 }
 
-//Hub client hub
+// Hub client hub
 type Hub struct {
 	ChannelPrefix string
 	messageQuene  *messageQuene
@@ -299,7 +269,7 @@ type Hub struct {
 	closeSign chan int
 }
 
-//Ping ping redis server
+// Ping ping redis server
 func (e *Hub) Ping() (err error) {
 	_, err = e.redisManager.Get().Do("PING")
 	if err != nil {
@@ -313,10 +283,11 @@ func (e *Hub) logger(format string, v ...interface{}) {
 	}
 }
 
-//CountOnlineUsers return online user total
+// CountOnlineUsers return online user total
 func (e *Hub) CountOnlineUsers() (i int) {
 	return e.pool.onlineCount()
 }
+
 // dispatchLoop 消費 broker 收到的事件,做控制事件分派或頻道廣播。
 func (e *Hub) dispatchLoop(msgs <-chan BrokerEvent) {
 	for ev := range msgs {
@@ -373,8 +344,8 @@ func (e *Hub) handleEvent(channel string, data []byte) {
 	}
 }
 
-//Listen hub start
-//it's block method
+// Listen hub start
+// it's block method
 func (e *Hub) Listen(channelPrefix string) error {
 	e.pool.channelPrefix = channelPrefix
 	e.ChannelPrefix = channelPrefix
@@ -394,7 +365,7 @@ func (e *Hub) Listen(channelPrefix string) error {
 	}
 }
 
-//Close close hub & close every client
+// Close close hub & close every client
 //
 // 註:目前不關閉 broker 的訂閱 goroutine(沿用舊行為,goroutine 會洩漏)。
 // 乾淨停止 broker(避免與 Receive 並發 race)留待「graceful shutdown」階段,

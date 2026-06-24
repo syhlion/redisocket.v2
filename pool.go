@@ -4,8 +4,6 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
-
-	"github.com/gomodule/redigo/redis"
 )
 
 type eventPayload struct {
@@ -43,7 +41,7 @@ type pool struct {
 	uReloadChannelChan chan *uReloadChannelPayload
 	uAddChannelChan    chan *uAddChannelPayload
 	sPayloadChan       chan *sPayload
-	rpool              *redis.Pool
+	presence           Presence
 	channelPrefix      string
 	scanInterval       time.Duration
 	msgTotal           int64
@@ -165,36 +163,18 @@ func (h *pool) kickSid(sid string) {
 	h.kickSidChan <- sid
 }
 func (h *pool) syncOnline() (err error) {
-	conn := h.rpool.Get()
-	defer conn.Close()
-	t := time.Now()
-	nt := t.Unix()
-	dt := t.Unix() - 86400
-	conn.Send("MULTI")
+	// 在 pool goroutine 內快照所有成員(讀 u.events 需 u.RLock),再交給 presence 批次處理。
+	members := make([]PresenceMember, 0, len(h.users))
 	for u := range h.users {
-		if u.uid != "" {
-			conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"online", "CH", nt, u.uid)
-		}
 		u.RLock()
+		chs := make([]string, 0, len(u.events))
 		for e := range u.events {
-			conn.Send("ZADD", h.channelPrefix+u.prefix+"@"+"channels:"+e, "CH", nt, u.uid)
-			conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"channels:"+e, 300)
+			chs = append(chs, e)
 		}
 		u.RUnlock()
-		conn.Send("EXPIRE", h.channelPrefix+u.prefix+"@"+"online", 300)
+		members = append(members, PresenceMember{AppKey: u.prefix, Uid: u.uid, Channels: chs})
 	}
-	conn.Do("EXEC")
-	tmp, err := redis.Strings(conn.Do("keys", h.channelPrefix+"*"))
-	if err != nil {
-		return
-	}
-	//刪除過時的key
-	conn.Send("MULTI")
-	for _, k := range tmp {
-		conn.Send("ZREMRANGEBYSCORE", k, dt, nt-60)
-	}
-	conn.Do("EXEC")
-	return
+	return h.presence.Sync(h.channelPrefix, members)
 }
 func (h *pool) broadcast(event string, p *Payload) {
 	h.broadcastChan <- &eventPayload{p, event}

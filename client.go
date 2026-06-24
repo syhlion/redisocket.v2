@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//Client gorilla websocket wrap struct
+// Client gorilla websocket wrap struct
 type Client struct {
 	prefix string
 	sid    string
@@ -60,27 +60,16 @@ func (c *Client) GetAuth() Auth {
 	return *c.auth
 }
 
-//On event.  client on event
+// On event.  client on event
 func (c *Client) On(event string, h EventHandler) {
 	c.Lock()
 	c.events[event] = h
 	c.Unlock()
-	conn := c.hub.rpool.Get()
-	defer func() {
-		conn.Close()
-	}()
-	nt := time.Now().Unix()
-	conn.Send("MULTI")
-	if c.uid != "" {
-		conn.Send("ZADD", c.hub.ChannelPrefix+c.prefix+"@"+"online", "CH", nt, c.uid)
-	}
-	conn.Send("ZADD", c.hub.ChannelPrefix+c.prefix+"@"+"channels:"+event, "CH", nt, c.uid)
-	conn.Do("EXEC")
-
+	c.hub.presence.Touch(c.hub.ChannelPrefix, c.prefix, c.uid, []string{event})
 	return
 }
 
-//Off event. client off event
+// Off event. client off event
 func (c *Client) Off(event string) {
 	c.Lock()
 	delete(c.events, event)
@@ -88,7 +77,7 @@ func (c *Client) Off(event string) {
 	return
 }
 
-//Trigger event. trigger client reigster event
+// Trigger event. trigger client reigster event
 func (c *Client) Trigger(event string, p *Payload) (err error) {
 	c.RLock()
 	_, ok := c.events[event]
@@ -106,7 +95,7 @@ func (c *Client) Trigger(event string, p *Payload) (err error) {
 	return
 }
 
-//Send message. write msg to client
+// Send message. write msg to client
 func (c *Client) Send(data []byte) {
 	p := &Payload{
 		Len:       len(data),
@@ -179,15 +168,15 @@ func (c *Client) readPump() {
 
 }
 
-//Close client. disconnect client
+// Close client. disconnect client
 func (c *Client) Close() {
 	c.ws.Close()
 	return
 }
 
-//Listen client
-//client start listen
-//it's block method
+// Listen client
+// client start listen
+// it's block method
 func (c *Client) Listen(re ReceiveMsgHandler) {
 	c.re = re
 	go c.writePump()
