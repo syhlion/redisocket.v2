@@ -21,8 +21,11 @@ func (m *messageQuene) worker() {
 		}
 	}
 }
-func (m *messageQuene) run() {
-	for i := 0; i < defaultMessageWorkers; i++ {
+func (m *messageQuene) run(workers int) {
+	if workers <= 0 {
+		workers = defaultMessageWorkers
+	}
+	for i := 0; i < workers; i++ {
 		go m.worker()
 	}
 }

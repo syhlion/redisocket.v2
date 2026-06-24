@@ -37,6 +37,7 @@ type WebsocketOptional struct {
 	PongWait       time.Duration
 	PingPeriod     time.Duration
 	MaxMessageSize int64
+	MessageWorkers int // inbound 訊息處理的 worker 數(<=0 用 defaultMessageWorkers)
 	Upgrader       websocket.Upgrader
 }
 type socketPayload struct {
@@ -64,6 +65,7 @@ var (
 		PongWait:       60 * time.Second,
 		PingPeriod:     (60 * time.Second * 9) / 10,
 		MaxMessageSize: 512,
+		MessageWorkers: defaultMessageWorkers,
 		Upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -231,7 +233,8 @@ func newHub(broker Broker, presence Presence, redisManager *redis.Pool, log *slo
 		pool:           pool,
 		quit:           quit,
 	}
-	mq.run()
+	// 註:workers 在 Listen() 啟動,讓使用者可於 NewHub 後、Listen 前調整
+	// Config.MessageWorkers。
 
 	return &Hub{
 
@@ -368,6 +371,7 @@ func (e *Hub) Listen(channelPrefix string) error {
 	e.ChannelPrefix = channelPrefix
 	msgs, busErr := e.broker.Subscribe(channelPrefix)
 	go e.dispatchLoop(msgs)
+	e.messageQuene.run(e.Config.MessageWorkers)
 	e.pool.scanInterval = e.Config.ScanInterval
 	poolErr := e.pool.run()
 	select {

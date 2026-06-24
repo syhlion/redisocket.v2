@@ -163,6 +163,7 @@ func testServerHub(t *testing.T, be backend, onUpgrade func(c *Client)) (*Hub, s
 	} else {
 		hub = NewHubWithBroker(be.broker, be.presencePool, newTestLogger(), false)
 	}
+	hub.Config.MessageWorkers = 8 // 測試用少量 worker(驗證可設定 + 加速)
 	go hub.Listen(be.prefix)
 	time.Sleep(100 * time.Millisecond) // 等 subscribe + pool 起來
 
