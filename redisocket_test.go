@@ -128,7 +128,7 @@ var backends = map[string]func(t *testing.T) backend{
 			t.Fatalf("nats connect: %v", err)
 		}
 		return backend{
-			broker:       newNATSBroker(nc),
+			broker:       NewNATSBroker(nc),
 			presencePool: pool,
 			prefix:       "gusher.",
 			cleanup:      func() { nc.Close(); ns.Shutdown(); pool.Close(); mr.Close() },
@@ -141,12 +141,12 @@ var backends = map[string]func(t *testing.T) backend{
 		if err != nil {
 			t.Fatalf("nats connect: %v", err)
 		}
-		presence, err := newMemoryPresence(nc, "gusher.")
+		presence, err := NewMemoryPresence(nc, "gusher.")
 		if err != nil {
 			t.Fatalf("memory presence: %v", err)
 		}
 		return backend{
-			broker:   newNATSBroker(nc),
+			broker:   NewNATSBroker(nc),
 			presence: presence,
 			prefix:   "gusher.",
 			cleanup:  func() { presence.Close(); nc.Close(); ns.Shutdown() },
@@ -232,12 +232,12 @@ func TestMemoryPresenceCrossNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer nc2.Close()
-	p1, err := newMemoryPresence(nc1, "gusher.")
+	p1, err := NewMemoryPresence(nc1, "gusher.")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p1.Close()
-	p2, err := newMemoryPresence(nc2, "gusher.")
+	p2, err := NewMemoryPresence(nc2, "gusher.")
 	if err != nil {
 		t.Fatal(err)
 	}

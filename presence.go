@@ -28,6 +28,8 @@ type Presence interface {
 	Online(prefix, appKey string) ([]string, error)
 	// Channels 回傳某 app 符合 pattern 的頻道名。
 	Channels(prefix, appKey, pattern string) ([]string, error)
+	// Close 釋放資源(memoryPresence 退訂查詢主題;redisPresence 為 no-op)。
+	Close() error
 }
 
 // redisPresence 以 Redis sorted set 實作 Presence(現役後端,行為與原 syncOnline/Get* 一致)。
@@ -39,6 +41,9 @@ type redisPresence struct {
 func newRedisPresence(pool *redis.Pool) *redisPresence {
 	return &redisPresence{pool: pool}
 }
+
+// Close 為 no-op(redis presence 不持有需釋放的訂閱)。
+func (p *redisPresence) Close() error { return nil }
 
 func (p *redisPresence) Touch(prefix, appKey, uid string, channels []string) error {
 	if uid == "" && len(channels) == 0 {

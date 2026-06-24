@@ -42,7 +42,7 @@ type presenceReply struct {
 const defaultPresenceQueryTimeout = 100 * time.Millisecond
 
 // newMemoryPresence 建立 memoryPresence 並啟動「回應其他節點查詢」的訂閱。
-func newMemoryPresence(nc *nats.Conn, prefix string) (*memoryPresence, error) {
+func NewMemoryPresence(nc *nats.Conn, prefix string) (Presence, error) {
 	p := &memoryPresence{
 		nc:           nc,
 		prefix:       prefix,

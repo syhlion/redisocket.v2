@@ -25,7 +25,7 @@ type natsBroker struct {
 	done chan struct{}
 }
 
-func newNATSBroker(nc *nats.Conn) *natsBroker {
+func NewNATSBroker(nc *nats.Conn) Broker {
 	return &natsBroker{nc: nc}
 }
 

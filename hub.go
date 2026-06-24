@@ -87,6 +87,12 @@ func NewSender(m *redis.Pool) (e *Sender) {
 	}
 }
 
+// NewSenderWithBrokerAndPresence 注入 broker 與 presence(NATS-native 的 publish 端;
+// presence 通常為 memoryPresence,本機無成員、查詢時 request/reply 聚合各節點)。
+func NewSenderWithBrokerAndPresence(broker Broker, presence Presence) *Sender {
+	return &Sender{broker: broker, presence: presence}
+}
+
 // Sender struct(publish 走 broker、presence 查詢走 presence;兩者皆可換後端)
 type Sender struct {
 	broker   Broker
@@ -390,7 +396,8 @@ func (e *Hub) Listen(channelPrefix string) error {
 // 可安全重複呼叫(sync.Once)。
 func (e *Hub) Close() {
 	e.closeOnce.Do(func() {
-		close(e.quit)    // 收掉 pool.run / message workers / statistic / 各 input 方法
-		e.broker.Close() // 收掉訂閱 goroutine → msgs 關閉 → dispatchLoop 結束
+		close(e.quit)           // 收掉 pool.run / message workers / statistic / 各 input 方法
+		e.broker.Close()        // 收掉訂閱 goroutine → msgs 關閉 → dispatchLoop 結束
+		e.pool.presence.Close() // 收掉 presence(memoryPresence 退訂;redis 為 no-op)
 	})
 }
