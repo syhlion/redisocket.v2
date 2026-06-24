@@ -1,6 +1,8 @@
 package redisocket
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -9,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/sirupsen/logrus"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -181,23 +182,23 @@ func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (
 }
 
 // NewHub It's create a Hub (Redis 後端:bus 與 presence 都用同一個 redis pool)
-func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
+func NewHub(m *redis.Pool, log *slog.Logger, debug bool) (e *Hub) {
 	return NewHubWithBroker(newRedisBroker(m), m, log, debug)
 }
 
 // NewHubWithBroker 注入 bus 後端(broker),presence 用 presencePool(redis)。
 // 用於「NATS broker + redis presence」過渡組合。
-func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
+func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *slog.Logger, debug bool) (e *Hub) {
 	return newHub(broker, newRedisPresence(presencePool), presencePool, log, debug)
 }
 
 // NewHubWithBrokerAndPresence 同時注入 broker 與 presence,完全不需要 redis。
 // NATS-native 路線用(natsBroker + memoryPresence)。
-func NewHubWithBrokerAndPresence(broker Broker, presence Presence, log *logrus.Logger, debug bool) (e *Hub) {
+func NewHubWithBrokerAndPresence(broker Broker, presence Presence, log *slog.Logger, debug bool) (e *Hub) {
 	return newHub(broker, presence, nil, log, debug)
 }
 
-func newHub(broker Broker, presence Presence, redisManager *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
+func newHub(broker Broker, presence Presence, redisManager *redis.Pool, log *slog.Logger, debug bool) (e *Hub) {
 
 	quit := make(chan struct{})
 	stat := &Statistic{
@@ -277,7 +278,7 @@ type Hub struct {
 	redisManager  *redis.Pool
 	*pool
 	debug     bool
-	log       *logrus.Logger
+	log       *slog.Logger
 	quit      chan struct{}
 	closeOnce sync.Once
 }
@@ -295,7 +296,7 @@ func (e *Hub) Ping() (err error) {
 }
 func (e *Hub) logger(format string, v ...interface{}) {
 	if e.debug {
-		e.log.Infof(format, v...)
+		e.log.Debug(fmt.Sprintf(format, v...))
 	}
 }
 

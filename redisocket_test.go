@@ -1,8 +1,11 @@
 package redisocket
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -13,7 +16,6 @@ import (
 	"github.com/gorilla/websocket"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/goleak"
 )
 
@@ -24,10 +26,54 @@ func newTestPool(addr string) *redis.Pool {
 	}
 }
 
-func newTestLogger() *logrus.Logger {
-	l := logrus.New()
-	l.SetLevel(logrus.PanicLevel) // keep test output quiet
-	return l
+func newTestLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// TestNewLoggerBoth 驗證 LogBoth(stdout＋file)會把 log 寫進檔案。
+func TestNewLoggerBoth(t *testing.T) {
+	path := t.TempDir() + "/test.log"
+	lg, closeLog, err := NewLogger(LogConfig{Output: LogBoth, File: path, Format: "json", Level: slog.LevelInfo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lg.Info("hello-both", "k", "v")
+	if err := closeLog(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hello-both") {
+		t.Fatalf("file missing log line: %q", string(data))
+	}
+}
+
+// TestNewLoggerRotation 驗證檔案輸出會依大小輪替(寫 >1MB → 產生 backup 檔)。
+func TestNewLoggerRotation(t *testing.T) {
+	dir := t.TempDir()
+	lg, closeLog, err := NewLogger(LogConfig{
+		Output: LogFile, File: dir + "/rot.log", Format: "text", Level: slog.LevelInfo,
+		MaxSizeMB: 1, MaxBackups: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Repeat("x", 2000)
+	for i := 0; i < 800; i++ { // ~800 * ~2KB ≈ 1.6MB → 至少一次輪替
+		lg.Info(line)
+	}
+	if err := closeLog(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("expected rotation (>=2 files), got %d", len(entries))
+	}
 }
 
 // startEmbeddedNATS 在 process 內起一個真的 nats-server(隨機埠),免外部依賴。
@@ -279,7 +325,10 @@ func TestDottedChannel(t *testing.T) {
 // (pool.run / message workers / statistic / broker 訂閱 / dispatchLoop / client)都退出。
 // 用 redis backend(engine goroutine 生命週期與後端無關;避開內嵌 nats server 自身 goroutine)。
 func TestNoGoroutineLeak(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	// 忽略 lumberjack 的 millRun(由 logger 測試帶起、其設計上不隨 Close 停止,
+	// 與引擎 shutdown 無關;引擎本身不使用 lumberjack)。
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun"))
 	be := backends["redis"](t)
 	_, srvURL, cleanup := testServerHub(t, be, func(c *Client) {
 		c.On("ch", noopHandler)

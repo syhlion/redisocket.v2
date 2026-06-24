@@ -10,8 +10,8 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/nats-io/nats-server/v2 v2.14.2
 	github.com/nats-io/nats.go v1.52.0
-	github.com/sirupsen/logrus v1.9.0
 	go.uber.org/goleak v1.3.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
