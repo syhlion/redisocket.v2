@@ -256,7 +256,7 @@ func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 		messageQuene: mq,
 		Config:       DefaultWebsocketOptional,
 		redisManager: m,
-		psc:          &redis.PubSubConn{Conn: m.Get()},
+		broker:       newRedisBroker(m),
 		pool:         pool,
 		debug:        debug,
 		closeSign:    make(chan int, 1),
@@ -292,7 +292,7 @@ type Hub struct {
 	ChannelPrefix string
 	messageQuene  *messageQuene
 	Config        WebsocketOptional
-	psc           *redis.PubSubConn
+	broker        Broker
 	redisManager  *redis.Pool
 	*pool
 	debug     bool
@@ -318,89 +318,60 @@ func (e *Hub) logger(format string, v ...interface{}) {
 func (e *Hub) CountOnlineUsers() (i int) {
 	return e.pool.onlineCount()
 }
-func (e *Hub) listenRedis() <-chan error {
+// dispatchLoop 消費 broker 收到的事件,做控制事件分派或頻道廣播。
+func (e *Hub) dispatchLoop(msgs <-chan BrokerEvent) {
+	for ev := range msgs {
+		e.handleEvent(ev.Event, ev.Data)
+	}
+}
 
-	errChan := make(chan error, 1)
-	go func() {
-		for {
-			switch v := e.psc.Receive().(type) {
-			case redis.Message:
-
-				//過濾掉前綴
-
-				channel := strings.Replace(v.Channel, e.ChannelPrefix, "", -1)
-				//過濾掉@ 之前的字
-				sch := strings.SplitN(channel, "@", 2)
-				if len(sch) != 2 {
-					continue
-				}
-
-				//過濾掉星號
-				channel = strings.Replace(sch[1], "*", "", -1)
-				if channel == "#GUSHERFUNC-TOUID#" {
-					up := &userPayload{}
-					err := json.Unmarshal(v.Data, up)
-					if err != nil {
-						continue
-					}
-					b, err := json.Marshal(up.Data)
-					if err != nil {
-						continue
-					}
-					e.toUid(up.Uid, b)
-					continue
-				}
-				if channel == "#GUSHERFUNC-TOSID#" {
-					up := &socketPayload{}
-					err := json.Unmarshal(v.Data, up)
-					if err != nil {
-						continue
-					}
-					b, err := json.Marshal(up.Data)
-					if err != nil {
-						continue
-					}
-					e.toSid(up.Sid, b)
-					continue
-				}
-
-				if channel == "#GUSHERFUNC-RELOADCHANEL#" {
-					up := &reloadChannelPayload{}
-					err := json.Unmarshal(v.Data, up)
-					if err != nil {
-						continue
-					}
-					e.reloadUidChannels(up.Uid, up.Channels)
-					continue
-				}
-				if channel == "#GUSHERFUNC-ADDCHANEL#" {
-					up := &addChannelPayload{}
-					err := json.Unmarshal(v.Data, up)
-					if err != nil {
-						continue
-					}
-					e.addUidChannels(up.Uid, up.Channel)
-					continue
-				}
-				pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, v.Data)
-				if err != nil {
-					continue
-				}
-				p := &Payload{
-					Len:            len(v.Data),
-					PrepareMessage: pMsg,
-					IsPrepare:      true,
-				}
-				e.broadcast(channel, p)
-
-			case error:
-				errChan <- v
-
-				break
-			}
+// handleEvent 處理單一 bus 事件:#GUSHERFUNC-*# 為控制事件,其餘為一般頻道廣播。
+func (e *Hub) handleEvent(channel string, data []byte) {
+	switch channel {
+	case "#GUSHERFUNC-TOUID#":
+		up := &userPayload{}
+		if err := json.Unmarshal(data, up); err != nil {
+			return
 		}
-	}()
-	return errChan
+		b, err := json.Marshal(up.Data)
+		if err != nil {
+			return
+		}
+		e.toUid(up.Uid, b)
+	case "#GUSHERFUNC-TOSID#":
+		up := &socketPayload{}
+		if err := json.Unmarshal(data, up); err != nil {
+			return
+		}
+		b, err := json.Marshal(up.Data)
+		if err != nil {
+			return
+		}
+		e.toSid(up.Sid, b)
+	case "#GUSHERFUNC-RELOADCHANEL#":
+		up := &reloadChannelPayload{}
+		if err := json.Unmarshal(data, up); err != nil {
+			return
+		}
+		e.reloadUidChannels(up.Uid, up.Channels)
+	case "#GUSHERFUNC-ADDCHANEL#":
+		up := &addChannelPayload{}
+		if err := json.Unmarshal(data, up); err != nil {
+			return
+		}
+		e.addUidChannels(up.Uid, up.Channel)
+	default:
+		pMsg, err := websocket.NewPreparedMessage(websocket.TextMessage, data)
+		if err != nil {
+			return
+		}
+		p := &Payload{
+			Len:            len(data),
+			PrepareMessage: pMsg,
+			IsPrepare:      true,
+		}
+		e.broadcast(channel, p)
+	}
 }
 
 //Listen hub start
@@ -408,12 +379,12 @@ func (e *Hub) listenRedis() <-chan error {
 func (e *Hub) Listen(channelPrefix string) error {
 	e.pool.channelPrefix = channelPrefix
 	e.ChannelPrefix = channelPrefix
-	e.psc.PSubscribe(channelPrefix + "*")
-	redisErr := e.listenRedis()
+	msgs, busErr := e.broker.Subscribe(channelPrefix)
+	go e.dispatchLoop(msgs)
 	e.pool.scanInterval = e.Config.ScanInterval
 	poolErr := e.pool.run()
 	select {
-	case er := <-redisErr:
+	case er := <-busErr:
 		e.pool.shutdown()
 		return er
 	case er := <-poolErr:
@@ -425,6 +396,10 @@ func (e *Hub) Listen(channelPrefix string) error {
 }
 
 //Close close hub & close every client
+//
+// 註:目前不關閉 broker 的訂閱 goroutine(沿用舊行為,goroutine 會洩漏)。
+// 乾淨停止 broker(避免與 Receive 並發 race)留待「graceful shutdown」階段,
+// 屆時 Broker 改為可停止的訂閱迴圈(NATS 實作會一開始就支援)。
 func (e *Hub) Close() {
 	e.closeSign <- 1
 	return
