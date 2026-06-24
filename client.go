@@ -244,7 +244,11 @@ func (c *Client) writePump() {
 				return
 			}
 			//超過時間 都沒有事件訂閱 就斷線處理
-			if len(c.events) == 0 {
+			//(持鎖讀 events,避免與 On/Off/SetChannels 的並發寫造成 map race)
+			c.RLock()
+			noEvents := len(c.events) == 0
+			c.RUnlock()
+			if noEvents {
 				c.hub.logger("user %s disconnect  err: timeout to subscribe", c.uid)
 				return
 			}

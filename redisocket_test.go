@@ -189,6 +189,47 @@ func TestDottedChannel(t *testing.T) {
 	}
 }
 
+// TestClientEventsConcurrent: 並發 On/Off churn,與 writePump ping-tick 讀 events
+// 並發,守住 c.events 的 map race 修復(連線層,與 backend 無關,用 redis fixture)。
+func TestClientEventsConcurrent(t *testing.T) {
+	be := backends["redis"](t)
+	hub := NewHubWithBroker(be.broker, be.presencePool, newTestLogger(), false)
+	hub.Config.PingPeriod = 5 * time.Millisecond // 讓 ping 分支頻繁讀 events
+	go hub.Listen(be.prefix)
+	time.Sleep(50 * time.Millisecond)
+
+	captured := make(chan *Client, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := &Auth{AppKey: "a", UserId: "u", Channels: []string{"*"}}
+		c, err := hub.Upgrade(w, r, nil, "u", "a", auth)
+		if err != nil {
+			return
+		}
+		c.On("seed", noopHandler) // 保持非空,避免 timeout 斷線
+		captured <- c
+		c.Listen(func(b []byte) ([]byte, error) { return nil, nil })
+	}))
+	defer func() { srv.Close(); hub.Close(); be.cleanup() }()
+
+	conn := dialWS(t, srv.URL, "a", "u")
+	defer conn.Close()
+	c := <-captured
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 500; i++ {
+			c.On("x", noopHandler)
+			c.Off("x")
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("timeout")
+	}
+}
+
 // TestConcurrentConnAndCount: 並發連線 + 同時讀 CountOnlineUsers(pool.users map 並發)。
 func TestConcurrentConnAndCount(t *testing.T) {
 	for name, factory := range backends {
