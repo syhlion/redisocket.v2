@@ -3,9 +3,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/syhlion/redisocket.v2)](https://goreportcard.com/report/github.com/syhlion/redisocket.v2)
 [![Build Status](https://travis-ci.org/syhlion/redisocket.v2.svg?branch=master)](https://travis-ci.org/syhlion/redisocket.v2)
 
-Base on gorilla/websocket & garyburd/redigo
+WebSocket hub engine with a pluggable cross-node bus & presence — **Redis or NATS** backend, swappable without touching the connection layer.
 
-Implement By Observer pattern
+📐 **Architecture**: [English](docs/ARCHITECTURE.md) · [繁體中文](docs/ARCHITECTURE.zh-TW.md)
 
 ## Documention
 
