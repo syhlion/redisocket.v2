@@ -34,7 +34,7 @@ type pool struct {
 	broadcastChan      chan *eventPayload
 	joinChan           chan *Client
 	leaveChan          chan *Client
-	shutdownChan       chan int
+	quit               chan struct{}
 	kickUidChan        chan string
 	kickSidChan        chan string
 	uPayloadChan       chan *uPayload
@@ -72,10 +72,12 @@ func (h *pool) run() <-chan error {
 				for u := range h.users {
 					u.Trigger(p.event, p.payload)
 				}
-			case <-h.shutdownChan:
+			case <-h.quit:
+				// graceful shutdown:關閉所有 client(觸發其 read/writePump 退出)後結束。
 				for u := range h.users {
 					u.Close()
 				}
+				return
 			case n := <-h.kickSidChan:
 				for u := range h.users {
 					if u.sid == n {
@@ -137,30 +139,44 @@ func (h *pool) run() <-chan error {
 	}()
 	return errChan
 }
+
+// 以下 input 方法皆 select on quit:shutdown 後 pool.run 已退出,
+// 這些 send 不會永久阻塞(否則呼叫端 goroutine 會洩漏)。
 func (h *pool) toUid(uid string, d []byte) {
-	u := &uPayload{uid: uid, data: d}
-	h.uPayloadChan <- u
+	select {
+	case h.uPayloadChan <- &uPayload{uid: uid, data: d}:
+	case <-h.quit:
+	}
 }
 func (h *pool) reloadUidChannels(uid string, channels []string) {
-	u := &uReloadChannelPayload{uid: uid, channels: channels}
-	h.uReloadChannelChan <- u
+	select {
+	case h.uReloadChannelChan <- &uReloadChannelPayload{uid: uid, channels: channels}:
+	case <-h.quit:
+	}
 }
 func (h *pool) addUidChannels(uid string, channel string) {
-	u := &uAddChannelPayload{uid: uid, channel: channel}
-	h.uAddChannelChan <- u
+	select {
+	case h.uAddChannelChan <- &uAddChannelPayload{uid: uid, channel: channel}:
+	case <-h.quit:
+	}
 }
 func (h *pool) toSid(sid string, d []byte) {
-	u := &sPayload{sid: sid, data: d}
-	h.sPayloadChan <- u
-}
-func (h *pool) shutdown() {
-	h.shutdownChan <- 1
+	select {
+	case h.sPayloadChan <- &sPayload{sid: sid, data: d}:
+	case <-h.quit:
+	}
 }
 func (h *pool) kickUid(uid string) {
-	h.kickUidChan <- uid
+	select {
+	case h.kickUidChan <- uid:
+	case <-h.quit:
+	}
 }
 func (h *pool) kickSid(sid string) {
-	h.kickSidChan <- sid
+	select {
+	case h.kickSidChan <- sid:
+	case <-h.quit:
+	}
 }
 func (h *pool) syncOnline() (err error) {
 	// 在 pool goroutine 內快照所有成員(讀 u.events 需 u.RLock),再交給 presence 批次處理。
@@ -177,11 +193,20 @@ func (h *pool) syncOnline() (err error) {
 	return h.presence.Sync(h.channelPrefix, members)
 }
 func (h *pool) broadcast(event string, p *Payload) {
-	h.broadcastChan <- &eventPayload{p, event}
+	select {
+	case h.broadcastChan <- &eventPayload{p, event}:
+	case <-h.quit:
+	}
 }
 func (h *pool) join(c *Client) {
-	h.joinChan <- c
+	select {
+	case h.joinChan <- c:
+	case <-h.quit:
+	}
 }
 func (h *pool) leave(c *Client) {
-	h.leaveChan <- c
+	select {
+	case h.leaveChan <- c:
+	case <-h.quit:
+	}
 }

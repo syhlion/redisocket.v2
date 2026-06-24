@@ -31,6 +31,7 @@ type Broker interface {
 type redisBroker struct {
 	pool *redis.Pool
 	psc  *redis.PubSubConn
+	done chan struct{}
 }
 
 func newRedisBroker(pool *redis.Pool) *redisBroker {
@@ -46,7 +47,16 @@ func (b *redisBroker) Publish(prefix, appKey, event string, data []byte) (int, e
 func (b *redisBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error) {
 	msgs := make(chan BrokerEvent, 4096)
 	errs := make(chan error, 1)
-	b.psc = &redis.PubSubConn{Conn: b.pool.Get()}
+	b.done = make(chan struct{})
+	// 用 pool.Dial() 取「專用 raw 連線」(非 pooled activeConn)。如此 Close 時關閉它
+	// 中斷阻塞中的 Receive,是 race-free 的(pooled activeConn 的簿記才會與 Receive race)。
+	conn, err := b.pool.Dial()
+	if err != nil {
+		errs <- err
+		close(msgs)
+		return msgs, errs
+	}
+	b.psc = &redis.PubSubConn{Conn: conn}
 	b.psc.PSubscribe(prefix + "*")
 	go func() {
 		defer close(msgs)
@@ -63,7 +73,13 @@ func (b *redisBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error
 				event := strings.Replace(sch[1], "*", "", -1)
 				msgs <- BrokerEvent{AppKey: sch[0], Event: event, Data: v.Data}
 			case error:
-				errs <- v
+				// Close() 關閉連線會讓 Receive 回錯;若是正常關閉(done 已關)就乾淨退出,
+				// 否則才回報為真錯誤(觸發上層重啟/收斂)。
+				select {
+				case <-b.done:
+				default:
+					errs <- v
+				}
 				return
 			}
 		}
@@ -71,7 +87,12 @@ func (b *redisBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error
 	return msgs, errs
 }
 
+// Close 關閉 done 與底層連線:連線關閉會中斷阻塞中的 Receive,goroutine 見 done
+// 後乾淨退出(不回報為錯誤)。raw 連線的 Close 與 Receive 並發是安全的。
 func (b *redisBroker) Close() error {
+	if b.done != nil {
+		close(b.done)
+	}
 	if b.psc != nil {
 		return b.psc.Close()
 	}

@@ -19,6 +19,7 @@ type Statistic struct {
 	outMsgChannel chan int
 	lastFlushTime time.Time
 	l             *logrus.Logger
+	quit          chan struct{}
 }
 
 func (s *Statistic) AddMem() {
@@ -73,6 +74,8 @@ func (s *Statistic) Run() {
 			s.outByte = 0
 			s.outMem = 0
 			s.inMem = 0
+		case <-s.quit:
+			return
 		}
 	}
 }

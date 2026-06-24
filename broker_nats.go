@@ -18,8 +18,9 @@ const eventHeader = "e"
 // 與 redisBroker 行為對齊(收全部、由 Hub 本地依 event 分派);per-channel
 // 精準訂閱為後續優化。
 type natsBroker struct {
-	nc  *nats.Conn
-	sub *nats.Subscription
+	nc   *nats.Conn
+	sub  *nats.Subscription
+	done chan struct{}
 }
 
 func newNATSBroker(nc *nats.Conn) *natsBroker {
@@ -37,26 +38,40 @@ func (b *natsBroker) Publish(prefix, appKey, event string, data []byte) (int, er
 func (b *natsBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error) {
 	msgs := make(chan BrokerEvent, 4096)
 	errs := make(chan error, 1)
-	sub, err := b.nc.Subscribe(prefix+">", func(m *nats.Msg) {
-		msgs <- BrokerEvent{
-			AppKey: strings.TrimPrefix(m.Subject, prefix),
-			Event:  m.Header.Get(eventHeader),
-			Data:   m.Data,
-		}
-	})
+	// 用 ChanSubscribe + 自有 goroutine,Close 時可關閉 msgs(讓 dispatchLoop 結束)。
+	natsMsgs := make(chan *nats.Msg, 4096)
+	sub, err := b.nc.ChanSubscribe(prefix+">", natsMsgs)
 	if err != nil {
 		errs <- err
 		close(msgs)
 		return msgs, errs
 	}
 	b.sub = sub
+	b.done = make(chan struct{})
+	go func() {
+		defer close(msgs)
+		for {
+			select {
+			case m := <-natsMsgs:
+				msgs <- BrokerEvent{
+					AppKey: strings.TrimPrefix(m.Subject, prefix),
+					Event:  m.Header.Get(eventHeader),
+					Data:   m.Data,
+				}
+			case <-b.done:
+				return
+			}
+		}
+	}()
 	return msgs, errs
 }
 
 func (b *natsBroker) Close() error {
 	if b.sub != nil {
-		// Drain 會處理完已排隊訊息再退訂,且與 callback 並發安全(不像 redigo)。
-		return b.sub.Drain()
+		b.sub.Unsubscribe()
+	}
+	if b.done != nil {
+		close(b.done)
 	}
 	return nil
 }

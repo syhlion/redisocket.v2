@@ -190,12 +190,14 @@ func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 // (Phase C)presencePool 將可為 nil。
 func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
+	quit := make(chan struct{})
 	stat := &Statistic{
 		inMemChannel:  make(chan int, 8192),
 		outMemChannel: make(chan int, 8192),
 		inMsgChannel:  make(chan int, 8192),
 		outMsgChannel: make(chan int, 8192),
 		l:             log,
+		quit:          quit,
 	}
 	go stat.Run()
 	pool := &pool{
@@ -210,13 +212,14 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 		uReloadChannelChan: make(chan *uReloadChannelPayload, 4096),
 		uAddChannelChan:    make(chan *uAddChannelPayload, 4096),
 		sPayloadChan:       make(chan *sPayload, 4096),
-		shutdownChan:       make(chan int, 1),
+		quit:               quit,
 		presence:           newRedisPresence(presencePool),
 	}
 	mq := &messageQuene{
 		freeBufferChan: make(chan *buffer, 8192),
 		serveChan:      make(chan *buffer, 8192),
 		pool:           pool,
+		quit:           quit,
 	}
 	mq.run()
 
@@ -228,7 +231,7 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 		broker:       broker,
 		pool:         pool,
 		debug:        debug,
-		closeSign:    make(chan int, 1),
+		quit:         quit,
 		log:          log,
 	}
 
@@ -266,7 +269,8 @@ type Hub struct {
 	*pool
 	debug     bool
 	log       *logrus.Logger
-	closeSign chan int
+	quit      chan struct{}
+	closeOnce sync.Once
 }
 
 // Ping ping redis server
@@ -355,23 +359,21 @@ func (e *Hub) Listen(channelPrefix string) error {
 	poolErr := e.pool.run()
 	select {
 	case er := <-busErr:
-		e.pool.shutdown()
+		e.Close()
 		return er
 	case er := <-poolErr:
+		e.Close()
 		return er
-	case <-e.closeSign:
-		e.pool.shutdown()
+	case <-e.quit:
 		return nil
 	}
 }
 
-// Close close hub & close every client
-//
-// 註:目前不關閉 broker 的訂閱 goroutine(沿用舊行為,goroutine 會洩漏)。
-// 乾淨停止 broker(避免與 Receive 並發 race)留待「graceful shutdown」階段,
-// 屆時 Broker 改為可停止的訂閱迴圈(NATS 實作會一開始就支援)。
+// Close 優雅關閉 Hub:停止 bus 訂閱、pool、message workers、statistic 與所有 client。
+// 可安全重複呼叫(sync.Once)。
 func (e *Hub) Close() {
-	e.closeSign <- 1
-	return
-
+	e.closeOnce.Do(func() {
+		close(e.quit)    // 收掉 pool.run / message workers / statistic / 各 input 方法
+		e.broker.Close() // 收掉訂閱 goroutine → msgs 關閉 → dispatchLoop 結束
+	})
 }

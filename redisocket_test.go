@@ -14,6 +14,7 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/goleak"
 )
 
 func newTestPool(addr string) *redis.Pool {
@@ -187,6 +188,23 @@ func TestDottedChannel(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNoGoroutineLeak: 連線後 graceful shutdown,驗證引擎所有背景 goroutine
+// (pool.run / message workers / statistic / broker 訂閱 / dispatchLoop / client)都退出。
+// 用 redis backend(engine goroutine 生命週期與後端無關;避開內嵌 nats server 自身 goroutine)。
+func TestNoGoroutineLeak(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	be := backends["redis"](t)
+	_, srvURL, cleanup := testServerHub(t, be, func(c *Client) {
+		c.On("ch", noopHandler)
+	})
+	conn := dialWS(t, srvURL, "appkey", "u1")
+	time.Sleep(150 * time.Millisecond)
+	conn.Close()
+	cleanup() // srv.Close + hub.Close(graceful) + pool/miniredis close
+	// 給 redis 訂閱輪詢(250ms)足夠時間注意到 done 後退出
+	time.Sleep(700 * time.Millisecond)
 }
 
 // TestClientEventsConcurrent: 並發 On/Off churn,與 writePump ping-tick 讀 events

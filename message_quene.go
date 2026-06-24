@@ -8,11 +8,17 @@ type messageQuene struct {
 	serveChan      chan *buffer
 	freeBufferChan chan *buffer
 	pool           *pool
+	quit           chan struct{}
 }
 
 func (m *messageQuene) worker() {
-	for b := range m.serveChan {
-		m.serve(b)
+	for {
+		select {
+		case b := <-m.serveChan:
+			m.serve(b)
+		case <-m.quit:
+			return
+		}
 	}
 }
 func (m *messageQuene) run() {

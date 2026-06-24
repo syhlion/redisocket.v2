@@ -227,6 +227,9 @@ func (c *Client) writePump() {
 
 			}
 
+		case <-c.hub.quit:
+			// graceful shutdown:立即喚醒並退出(否則會卡在 select 直到 ping ticker)。
+			return
 		case <-t.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
 				c.hub.logger("user %s disconnect  err: ping message  %s", c.uid, err)
