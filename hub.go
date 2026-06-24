@@ -210,8 +210,15 @@ func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (
 	return s.broker.Publish(channelPrefix, appKey, event, data)
 }
 
-//NewHub It's create a Hub
+//NewHub It's create a Hub (Redis 後端:bus 與 presence 都用同一個 redis pool)
 func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
+	return NewHubWithBroker(newRedisBroker(m), m, log, debug)
+}
+
+//NewHubWithBroker 注入 bus 後端(broker),presence 仍用 presencePool。
+//可用於以 NATS broker + redis presence 組合(Phase B);presence 抽離後
+//(Phase C)presencePool 將可為 nil。
+func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
 	stat := &Statistic{
 		inMemChannel:  make(chan int, 8192),
@@ -234,7 +241,7 @@ func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 		uAddChannelChan:    make(chan *uAddChannelPayload, 4096),
 		sPayloadChan:       make(chan *sPayload, 4096),
 		shutdownChan:       make(chan int, 1),
-		rpool:              m,
+		rpool:              presencePool,
 	}
 	mq := &messageQuene{
 		freeBufferChan: make(chan *buffer, 8192),
@@ -247,8 +254,8 @@ func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
 		messageQuene: mq,
 		Config:       DefaultWebsocketOptional,
-		redisManager: m,
-		broker:       newRedisBroker(m),
+		redisManager: presencePool,
+		broker:       broker,
 		pool:         pool,
 		debug:        debug,
 		closeSign:    make(chan int, 1),

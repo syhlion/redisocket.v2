@@ -11,6 +11,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gomodule/redigo/redis"
 	"github.com/gorilla/websocket"
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -27,22 +29,70 @@ func newTestLogger() *logrus.Logger {
 	return l
 }
 
-// testServer 起一個 miniredis + Hub + httptest ws server,回傳關閉函式。
-func testServer(t *testing.T, prefix string, onUpgrade func(c *Client)) (*Sender, string, func()) {
-	_, s, u, c := testServerHub(t, prefix, onUpgrade)
-	return s, u, c
+// startEmbeddedNATS 在 process 內起一個真的 nats-server(隨機埠),免外部依賴。
+func startEmbeddedNATS(t *testing.T) *natsserver.Server {
+	t.Helper()
+	ns, err := natsserver.NewServer(&natsserver.Options{Host: "127.0.0.1", Port: -1})
+	if err != nil {
+		t.Fatalf("nats server: %v", err)
+	}
+	go ns.Start()
+	if !ns.ReadyForConnections(5 * time.Second) {
+		t.Fatal("nats not ready")
+	}
+	return ns
 }
 
-func testServerHub(t *testing.T, prefix string, onUpgrade func(c *Client)) (*Hub, *Sender, string, func()) {
+// backend 是「一個 bus 後端 + presence 用的 redis pool + 前綴 + 清理」。
+// presence 仍走 redis(Phase C 才抽離),故兩後端都帶 miniredis pool。
+type backend struct {
+	broker       Broker
+	presencePool *redis.Pool
+	prefix       string
+	cleanup      func()
+}
+
+// backends:同一套行為測試會對這裡每個後端各跑一次,斷言必須一致。
+var backends = map[string]func(t *testing.T) backend{
+	"redis": func(t *testing.T) backend {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis: %v", err)
+		}
+		pool := newTestPool(mr.Addr())
+		return backend{
+			broker:       newRedisBroker(pool),
+			presencePool: pool,
+			prefix:       "test.",
+			cleanup:      func() { pool.Close(); mr.Close() },
+		}
+	},
+	"nats": func(t *testing.T) backend {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis: %v", err)
+		}
+		pool := newTestPool(mr.Addr())
+		ns := startEmbeddedNATS(t)
+		nc, err := nats.Connect(ns.ClientURL())
+		if err != nil {
+			t.Fatalf("nats connect: %v", err)
+		}
+		return backend{
+			broker:       newNATSBroker(nc),
+			presencePool: pool,
+			prefix:       "gusher.",
+			cleanup:      func() { nc.Close(); ns.Shutdown(); pool.Close(); mr.Close() },
+		}
+	},
+}
+
+// testServerHub 用給定後端起 Hub + httptest ws server。
+func testServerHub(t *testing.T, be backend, onUpgrade func(c *Client)) (*Hub, string, func()) {
 	t.Helper()
-	mr, err := miniredis.Run()
-	if err != nil {
-		t.Fatalf("miniredis: %v", err)
-	}
-	pool := newTestPool(mr.Addr())
-	hub := NewHub(pool, newTestLogger(), false)
-	go hub.Listen(prefix)
-	time.Sleep(100 * time.Millisecond) // 等 psubscribe + pool 起來
+	hub := NewHubWithBroker(be.broker, be.presencePool, newTestLogger(), false)
+	go hub.Listen(be.prefix)
+	time.Sleep(100 * time.Millisecond) // 等 subscribe + pool 起來
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		appKey := r.URL.Query().Get("app_key")
@@ -61,10 +111,9 @@ func testServerHub(t *testing.T, prefix string, onUpgrade func(c *Client)) (*Hub
 	cleanup := func() {
 		srv.Close()
 		hub.Close()
-		pool.Close()
-		mr.Close()
+		be.cleanup()
 	}
-	return hub, NewSender(pool), srv.URL, cleanup
+	return hub, srv.URL, cleanup
 }
 
 func dialWS(t *testing.T, srvURL, appKey, uid string) *websocket.Conn {
@@ -77,63 +126,102 @@ func dialWS(t *testing.T, srvURL, appKey, uid string) *websocket.Conn {
 	return conn
 }
 
-// TestPubSubDelivery: client 訂閱頻道 → Sender.Push → client 收到。
+func noopHandler(event string, p *Payload) error { return nil }
+
+// TestPubSubDelivery: client 訂閱頻道 → broker.Publish → client 收到。兩後端各跑一次。
 func TestPubSubDelivery(t *testing.T) {
-	const appKey, channel = "appkey", "mychannel"
-	sender, srvURL, cleanup := testServer(t, "test.", func(c *Client) {
-		c.On(channel, func(event string, p *Payload) error { return nil })
-	})
-	defer cleanup()
+	for name, factory := range backends {
+		t.Run(name, func(t *testing.T) {
+			be := factory(t)
+			const appKey, channel = "appkey", "mychannel"
+			_, srvURL, cleanup := testServerHub(t, be, func(c *Client) {
+				c.On(channel, noopHandler)
+			})
+			defer cleanup()
 
-	conn := dialWS(t, srvURL, appKey, "u1")
-	defer conn.Close()
-	time.Sleep(150 * time.Millisecond) // 等 On + 訂閱穩定
+			conn := dialWS(t, srvURL, appKey, "u1")
+			defer conn.Close()
+			time.Sleep(150 * time.Millisecond) // 等 On + 訂閱穩定
 
-	if _, err := sender.Push("test.", appKey, channel, []byte("hello")); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+			if _, err := be.broker.Publish(be.prefix, appKey, channel, []byte("hello")); err != nil {
+				t.Fatalf("publish: %v", err)
+			}
 
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(msg) != "hello" {
-		t.Fatalf("got %q want hello", string(msg))
+			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if string(msg) != "hello" {
+				t.Fatalf("got %q want hello", string(msg))
+			}
+		})
 	}
 }
 
-// TestConcurrentConnAndCount: 並發連線 + 同時讀 CountOnlineUsers,
-// 用來讓 pool.users map 的並發讀寫 race 在 -race 下現形。
-func TestConcurrentConnAndCount(t *testing.T) {
-	hub, _, srvURL, cleanup := testServerHub(t, "race.", nil)
-	defer cleanup()
+// TestDottedChannel: 頻道名含 "." 與特殊字元,確保 NATS subject/header 映射 roundtrip 不壞。
+func TestDottedChannel(t *testing.T) {
+	for name, factory := range backends {
+		t.Run(name, func(t *testing.T) {
+			be := factory(t)
+			const appKey, channel = "appkey", "room.5.user@x"
+			_, srvURL, cleanup := testServerHub(t, be, func(c *Client) {
+				c.On(channel, noopHandler)
+			})
+			defer cleanup()
 
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	// reader: 不停讀在線數(外部直讀 pool.users,與 join/leave 並發 → 預期 -race 報 race)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				_ = hub.CountOnlineUsers()
+			conn := dialWS(t, srvURL, appKey, "u1")
+			defer conn.Close()
+			time.Sleep(150 * time.Millisecond)
+
+			if _, err := be.broker.Publish(be.prefix, appKey, channel, []byte("dotted")); err != nil {
+				t.Fatalf("publish: %v", err)
 			}
-		}
-	}()
+			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if string(msg) != "dotted" {
+				t.Fatalf("got %q want dotted", string(msg))
+			}
+		})
+	}
+}
 
-	conns := make([]*websocket.Conn, 0, 20)
-	for i := 0; i < 20; i++ {
-		c := dialWS(t, srvURL, "appkey", "u")
-		conns = append(conns, c)
+// TestConcurrentConnAndCount: 並發連線 + 同時讀 CountOnlineUsers(pool.users map 並發)。
+func TestConcurrentConnAndCount(t *testing.T) {
+	for name, factory := range backends {
+		t.Run(name, func(t *testing.T) {
+			be := factory(t)
+			hub, srvURL, cleanup := testServerHub(t, be, nil)
+			defer cleanup()
+
+			var wg sync.WaitGroup
+			stop := make(chan struct{})
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						_ = hub.CountOnlineUsers()
+					}
+				}
+			}()
+
+			conns := make([]*websocket.Conn, 0, 20)
+			for i := 0; i < 20; i++ {
+				conns = append(conns, dialWS(t, srvURL, "appkey", "u"))
+			}
+			time.Sleep(200 * time.Millisecond)
+			close(stop)
+			for _, c := range conns {
+				c.Close()
+			}
+			wg.Wait()
+		})
 	}
-	time.Sleep(200 * time.Millisecond)
-	close(stop)
-	for _, c := range conns {
-		c.Close()
-	}
-	wg.Wait()
 }
