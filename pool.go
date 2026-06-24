@@ -2,6 +2,7 @@ package redisocket
 
 import (
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
@@ -47,6 +48,15 @@ type pool struct {
 	scanInterval       time.Duration
 	msgTotal           int64
 	msgByteSum         int64
+	stat               *Statistic
+	// userCount 為 users map 大小的 atomic 鏡像,供 pool goroutine 外安全讀取
+	// (CountOnlineUsers)。只在 pool goroutine 內 join/leave 時更新。
+	userCount int64
+}
+
+// onlineCount 回傳目前在線連線數,可在 pool goroutine 外安全呼叫。
+func (h *pool) onlineCount() int {
+	return int(atomic.LoadInt64(&h.userCount))
 }
 
 func (h *pool) run() <-chan error {
@@ -110,13 +120,15 @@ func (h *pool) run() <-chan error {
 					}
 				}
 			case u := <-h.joinChan:
-				statistic.AddMem()
+				h.stat.AddMem()
 				h.users[u] = true
+				atomic.AddInt64(&h.userCount, 1)
 			case u := <-h.leaveChan:
 				if _, ok := h.users[u]; ok {
-					statistic.SubMem()
+					h.stat.SubMem()
 					close(u.send)
 					delete(h.users, u)
+					atomic.AddInt64(&h.userCount, -1)
 				}
 			case <-t.C:
 				h.syncOnline()

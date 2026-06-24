@@ -16,8 +16,6 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-var statistic *Statistic
-
 //User client interface
 type User interface {
 	Trigger(event string, p *Payload) (err error)
@@ -223,15 +221,16 @@ func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (
 //NewHub It's create a Hub
 func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
-	statistic = &Statistic{
+	stat := &Statistic{
 		inMemChannel:  make(chan int, 8192),
 		outMemChannel: make(chan int, 8192),
 		inMsgChannel:  make(chan int, 8192),
 		outMsgChannel: make(chan int, 8192),
 		l:             log,
 	}
-	go statistic.Run()
+	go stat.Run()
 	pool := &pool{
+		stat:               stat,
 		users:              make(map[*Client]bool),
 		broadcastChan:      make(chan *eventPayload, 4096),
 		joinChan:           make(chan *Client),
@@ -317,7 +316,7 @@ func (e *Hub) logger(format string, v ...interface{}) {
 
 //CountOnlineUsers return online user total
 func (e *Hub) CountOnlineUsers() (i int) {
-	return len(e.pool.users)
+	return e.pool.onlineCount()
 }
 func (e *Hub) listenRedis() <-chan error {
 

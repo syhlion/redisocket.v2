@@ -166,7 +166,7 @@ func (c *Client) readPump() {
 			c.hub.logger("user %s disconnect  err: copy buffer error", c.uid)
 			return
 		}
-		statistic.AddInMsg(buf.buffer.Len())
+		c.hub.stat.AddInMsg(buf.buffer.Len())
 		select {
 		case c.hub.messageQuene.serveChan <- buf:
 		default:
@@ -223,7 +223,7 @@ func (c *Client) writePump() {
 					return
 				}
 			}
-			statistic.AddOutMsg(msg.Len)
+			c.hub.stat.AddOutMsg(msg.Len)
 			if msg.IsPrepare {
 
 				if err := c.writePreparedMessage(msg.PrepareMessage); err != nil {
