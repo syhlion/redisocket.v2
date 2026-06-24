@@ -13,20 +13,20 @@ type eventPayload struct {
 
 // pool 用
 type uPayload struct {
-	uid  string `json:"uid"`
-	data []byte `json:"data"`
+	uid  string
+	data []byte
 }
 type uReloadChannelPayload struct {
-	uid      string   `json:"uid"`
-	channels []string `json:"channels"`
+	uid      string
+	channels []string
 }
 type uAddChannelPayload struct {
-	uid     string `json:"uid"`
-	channel string `json:"channel"`
+	uid     string
+	channel string
 }
 type sPayload struct {
-	sid  string `json:"uid"`
-	data []byte `json:"data"`
+	sid  string
+	data []byte
 }
 
 type pool struct {

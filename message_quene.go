@@ -1,8 +1,8 @@
 package redisocket
 
-import (
-	"log"
-)
+// defaultMessageWorkers 是處理 inbound 訊息的 worker goroutine 數。
+// TODO(Phase E/F):改為可設定 + 可停止(graceful shutdown)。
+const defaultMessageWorkers = 1024
 
 type messageQuene struct {
 	serveChan      chan *buffer
@@ -11,16 +11,12 @@ type messageQuene struct {
 }
 
 func (m *messageQuene) worker() {
-	for {
-		select {
-		case b := <-m.serveChan:
-			m.serve(b)
-		}
+	for b := range m.serveChan {
+		m.serve(b)
 	}
-	log.Println("[redisocket.v2] message quene crash")
 }
 func (m *messageQuene) run() {
-	for i := 0; i < 1024; i++ {
+	for i := 0; i < defaultMessageWorkers; i++ {
 		go m.worker()
 	}
 }
