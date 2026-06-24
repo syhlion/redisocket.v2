@@ -185,10 +185,19 @@ func NewHub(m *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 	return NewHubWithBroker(newRedisBroker(m), m, log, debug)
 }
 
-// NewHubWithBroker 注入 bus 後端(broker),presence 仍用 presencePool。
-// 可用於以 NATS broker + redis presence 組合(Phase B);presence 抽離後
-// (Phase C)presencePool 將可為 nil。
+// NewHubWithBroker 注入 bus 後端(broker),presence 用 presencePool(redis)。
+// 用於「NATS broker + redis presence」過渡組合。
 func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
+	return newHub(broker, newRedisPresence(presencePool), presencePool, log, debug)
+}
+
+// NewHubWithBrokerAndPresence 同時注入 broker 與 presence,完全不需要 redis。
+// NATS-native 路線用(natsBroker + memoryPresence)。
+func NewHubWithBrokerAndPresence(broker Broker, presence Presence, log *logrus.Logger, debug bool) (e *Hub) {
+	return newHub(broker, presence, nil, log, debug)
+}
+
+func newHub(broker Broker, presence Presence, redisManager *redis.Pool, log *logrus.Logger, debug bool) (e *Hub) {
 
 	quit := make(chan struct{})
 	stat := &Statistic{
@@ -213,7 +222,7 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 		uAddChannelChan:    make(chan *uAddChannelPayload, 4096),
 		sPayloadChan:       make(chan *sPayload, 4096),
 		quit:               quit,
-		presence:           newRedisPresence(presencePool),
+		presence:           presence,
 	}
 	mq := &messageQuene{
 		freeBufferChan: make(chan *buffer, 8192),
@@ -227,7 +236,7 @@ func NewHubWithBroker(broker Broker, presencePool *redis.Pool, log *logrus.Logge
 
 		messageQuene: mq,
 		Config:       DefaultWebsocketOptional,
-		redisManager: presencePool,
+		redisManager: redisManager,
 		broker:       broker,
 		pool:         pool,
 		debug:        debug,
@@ -273,8 +282,11 @@ type Hub struct {
 	closeOnce sync.Once
 }
 
-// Ping ping redis server
+// Ping ping redis server(NATS-native 路線無 redis,redisManager 為 nil 時為 no-op)
 func (e *Hub) Ping() (err error) {
+	if e.redisManager == nil {
+		return nil
+	}
 	_, err = e.redisManager.Get().Do("PING")
 	if err != nil {
 		return

@@ -13,10 +13,12 @@ const eventHeader = "e"
 
 // natsBroker 以 NATS core pub/sub 實作 Broker。
 //
-// Subject 映射:publish 到 "<prefix><appKey>"(prefix 慣例以 "." 結尾,故等同
-// "<prefix>.<appKey>" 的 token 結構);訂閱 "<prefix>>" 收所有 appKey。
-// 與 redisBroker 行為對齊(收全部、由 Hub 本地依 event 分派);per-channel
-// 精準訂閱為後續優化。
+// Subject 映射:bus 訊息收在 "<prefix>ch." 命名空間下,publish 到
+// "<prefix>ch.<appKey>"、訂閱 "<prefix>ch.>"。如此 presence 的
+// "<prefix>presence.*"、remote 的 "<prefix>rpc.*" 才不會被 bus 的萬用吃掉。
+// (與 redisBroker 行為對齊:收全部、由 Hub 本地依 event 分派。)
+const natsBusNS = "ch."
+
 type natsBroker struct {
 	nc   *nats.Conn
 	sub  *nats.Subscription
@@ -28,7 +30,7 @@ func newNATSBroker(nc *nats.Conn) *natsBroker {
 }
 
 func (b *natsBroker) Publish(prefix, appKey, event string, data []byte) (int, error) {
-	msg := nats.NewMsg(prefix + appKey)
+	msg := nats.NewMsg(prefix + natsBusNS + appKey)
 	msg.Header.Set(eventHeader, event)
 	msg.Data = data
 	// NATS core 無「收到的訂閱者數」概念,回 0。
@@ -40,7 +42,8 @@ func (b *natsBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error)
 	errs := make(chan error, 1)
 	// 用 ChanSubscribe + 自有 goroutine,Close 時可關閉 msgs(讓 dispatchLoop 結束)。
 	natsMsgs := make(chan *nats.Msg, 4096)
-	sub, err := b.nc.ChanSubscribe(prefix+">", natsMsgs)
+	busPrefix := prefix + natsBusNS
+	sub, err := b.nc.ChanSubscribe(busPrefix+">", natsMsgs)
 	if err != nil {
 		errs <- err
 		close(msgs)
@@ -54,7 +57,7 @@ func (b *natsBroker) Subscribe(prefix string) (<-chan BrokerEvent, <-chan error)
 			select {
 			case m := <-natsMsgs:
 				msgs <- BrokerEvent{
-					AppKey: strings.TrimPrefix(m.Subject, prefix),
+					AppKey: strings.TrimPrefix(m.Subject, busPrefix),
 					Event:  m.Header.Get(eventHeader),
 					Data:   m.Data,
 				}

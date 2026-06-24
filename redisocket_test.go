@@ -47,7 +47,9 @@ func startEmbeddedNATS(t *testing.T) *natsserver.Server {
 // backend 是「一個 bus 後端 + presence 用的 redis pool + 前綴 + 清理」。
 // presence 仍走 redis(Phase C 才抽離),故兩後端都帶 miniredis pool。
 type backend struct {
-	broker       Broker
+	broker Broker
+	// presence 非 nil 時直接注入(NATS-native);否則用 presencePool 建 redisPresence。
+	presence     Presence
 	presencePool *redis.Pool
 	prefix       string
 	cleanup      func()
@@ -86,12 +88,35 @@ var backends = map[string]func(t *testing.T) backend{
 			cleanup:      func() { nc.Close(); ns.Shutdown(); pool.Close(); mr.Close() },
 		}
 	},
+	// nats-native:bus 與 presence 都走 NATS,完全無 Redis。
+	"nats-native": func(t *testing.T) backend {
+		ns := startEmbeddedNATS(t)
+		nc, err := nats.Connect(ns.ClientURL())
+		if err != nil {
+			t.Fatalf("nats connect: %v", err)
+		}
+		presence, err := newMemoryPresence(nc, "gusher.")
+		if err != nil {
+			t.Fatalf("memory presence: %v", err)
+		}
+		return backend{
+			broker:   newNATSBroker(nc),
+			presence: presence,
+			prefix:   "gusher.",
+			cleanup:  func() { presence.Close(); nc.Close(); ns.Shutdown() },
+		}
+	},
 }
 
 // testServerHub 用給定後端起 Hub + httptest ws server。
 func testServerHub(t *testing.T, be backend, onUpgrade func(c *Client)) (*Hub, string, func()) {
 	t.Helper()
-	hub := NewHubWithBroker(be.broker, be.presencePool, newTestLogger(), false)
+	var hub *Hub
+	if be.presence != nil {
+		hub = NewHubWithBrokerAndPresence(be.broker, be.presence, newTestLogger(), false)
+	} else {
+		hub = NewHubWithBroker(be.broker, be.presencePool, newTestLogger(), false)
+	}
 	go hub.Listen(be.prefix)
 	time.Sleep(100 * time.Millisecond) // 等 subscribe + pool 起來
 
@@ -128,6 +153,66 @@ func dialWS(t *testing.T, srvURL, appKey, uid string) *websocket.Conn {
 }
 
 func noopHandler(event string, p *Payload) error { return nil }
+
+func sameSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	m := make(map[string]bool, len(got))
+	for _, g := range got {
+		m[g] = true
+	}
+	for _, w := range want {
+		if !m[w] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestMemoryPresenceCrossNode: 兩個節點各持本機成員,驗證查詢透過 NATS
+// request/reply 跨節點聚合(union)。
+func TestMemoryPresenceCrossNode(t *testing.T) {
+	ns := startEmbeddedNATS(t)
+	defer ns.Shutdown()
+	nc1, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc1.Close()
+	nc2, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc2.Close()
+	p1, err := newMemoryPresence(nc1, "gusher.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+	p2, err := newMemoryPresence(nc2, "gusher.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p2.Close()
+
+	p1.Touch("gusher.", "app", "userA", []string{"room1"})
+	p2.Touch("gusher.", "app", "userB", []string{"room1", "room2"})
+	time.Sleep(50 * time.Millisecond) // 等兩節點的 responder 訂閱就緒
+
+	if online, _ := p1.Online("gusher.", "app"); !sameSet(online, []string{"userA", "userB"}) {
+		t.Fatalf("Online = %v, want {userA,userB}", online)
+	}
+	if r1, _ := p2.OnlineByChannel("gusher.", "app", "room1"); !sameSet(r1, []string{"userA", "userB"}) {
+		t.Fatalf("OnlineByChannel(room1) = %v, want {userA,userB}", r1)
+	}
+	if r2, _ := p1.OnlineByChannel("gusher.", "app", "room2"); !sameSet(r2, []string{"userB"}) {
+		t.Fatalf("OnlineByChannel(room2) = %v, want {userB}", r2)
+	}
+	if chs, _ := p1.Channels("gusher.", "app", "*"); !sameSet(chs, []string{"room1", "room2"}) {
+		t.Fatalf("Channels = %v, want {room1,room2}", chs)
+	}
+}
 
 // TestPubSubDelivery: client 訂閱頻道 → broker.Publish → client 收到。兩後端各跑一次。
 func TestPubSubDelivery(t *testing.T) {
