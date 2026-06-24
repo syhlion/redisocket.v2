@@ -10,7 +10,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -270,7 +270,7 @@ func (e *Hub) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader htt
 	if err != nil {
 		return
 	}
-	sid := uuid.NewV1()
+	sid := uuid.New() // V4 隨機 UUID(取代 satori NewV1 的可預測時間/MAC 版)
 	c = &Client{
 		prefix:  prefix,
 		uid:     uid,
