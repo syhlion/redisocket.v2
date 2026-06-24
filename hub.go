@@ -82,12 +82,17 @@ func NewSender(m *redis.Pool) (e *Sender) {
 
 	return &Sender{
 		redisManager: m,
+		broker:       newRedisBroker(m),
 	}
 }
 
 //Sender struct
+//
+// 註:publish 走 broker(可換 NATS);redisManager 暫留給 presence 查詢
+// (GetChannels/GetOnline*),待 Phase C 抽 Presence 後移除。
 type Sender struct {
 	redisManager *redis.Pool
+	broker       Broker
 }
 
 //BatchData push batch data struct
@@ -138,18 +143,14 @@ func (s *Sender) GetOnline(channelPrefix string, appKey string) (online []string
 
 //PushBatch push batch data
 func (s *Sender) PushBatch(channelPrefix, appKey string, data []BatchData) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
 	for _, d := range data {
-		conn.Do("PUBLISH", channelPrefix+appKey+"@"+d.Event, d.Data)
+		s.broker.Publish(channelPrefix, appKey, d.Event, d.Data)
 	}
 	return
 }
 
 //PushToSid  push to user socket id
 func (s *Sender) PushToSid(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
 	u := socketPayload{
 		Sid:  uid,
 		Data: data,
@@ -158,14 +159,12 @@ func (s *Sender) PushToSid(channelPrefix, appKey string, uid string, data interf
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOSID#", d))
+	val, err = s.broker.Publish(channelPrefix, appKey, "#GUSHERFUNC-TOSID#", d)
 	return
 }
 
 //PushTo  push to user socket
 func (s *Sender) PushToUid(channelPrefix, appKey string, uid string, data interface{}) (val int, err error) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
 	u := userPayload{
 		Uid:  uid,
 		Data: data,
@@ -174,14 +173,12 @@ func (s *Sender) PushToUid(channelPrefix, appKey string, uid string, data interf
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-TOUID#", d))
+	val, err = s.broker.Publish(channelPrefix, appKey, "#GUSHERFUNC-TOUID#", d)
 	return
 }
 
 //ReloadChannel  reload user channel list
 func (s *Sender) ReloadChannel(channelPrefix, appKey string, uid string, channels []string) (val int, err error) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
 	u := reloadChannelPayload{
 		Uid:      uid,
 		Channels: channels,
@@ -190,14 +187,12 @@ func (s *Sender) ReloadChannel(channelPrefix, appKey string, uid string, channel
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-RELOADCHANEL#", d))
+	val, err = s.broker.Publish(channelPrefix, appKey, "#GUSHERFUNC-RELOADCHANEL#", d)
 	return
 }
 
 //AddChannel  append channel to user channel list
 func (s *Sender) AddChannel(channelPrefix, appKey string, uid string, channel string) (val int, err error) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
 	u := addChannelPayload{
 		Uid:     uid,
 		Channel: channel,
@@ -206,16 +201,13 @@ func (s *Sender) AddChannel(channelPrefix, appKey string, uid string, channel st
 	if err != nil {
 		return
 	}
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+"#GUSHERFUNC-ADDCHANEL#", d))
+	val, err = s.broker.Publish(channelPrefix, appKey, "#GUSHERFUNC-ADDCHANEL#", d)
 	return
 }
 
 //Push push single data
 func (s *Sender) Push(channelPrefix, appKey string, event string, data []byte) (val int, err error) {
-	conn := s.redisManager.Get()
-	defer conn.Close()
-	val, err = redis.Int(conn.Do("PUBLISH", channelPrefix+appKey+"@"+event, data))
-	return
+	return s.broker.Publish(channelPrefix, appKey, event, data)
 }
 
 //NewHub It's create a Hub
