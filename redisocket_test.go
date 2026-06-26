@@ -261,6 +261,58 @@ func TestMemoryPresenceCrossNode(t *testing.T) {
 	}
 }
 
+// TestMemoryPresenceStatsCrossNode verifies the two-axis aggregation: connection
+// (socket) counts are summed exactly, while distinct-user counts are an
+// approximate sum (a user on two nodes is counted on each).
+func TestMemoryPresenceStatsCrossNode(t *testing.T) {
+	ns := startEmbeddedNATS(t)
+	defer ns.Shutdown()
+	nc1, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc1.Close()
+	nc2, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc2.Close()
+	p1, err := NewMemoryPresence(nc1, "gusher.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+	p2, err := NewMemoryPresence(nc2, "gusher.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p2.Close()
+
+	// node1: userA has TWO sockets → conns=2, distinct users=1
+	p1.Sync("gusher.", []PresenceMember{
+		{AppKey: "app", Uid: "userA", Channels: []string{"room1"}},
+		{AppKey: "app", Uid: "userA", Channels: []string{"room1"}},
+	})
+	// node2: userA (also connected here) + userB → conns=2, distinct users=2
+	p2.Sync("gusher.", []PresenceMember{
+		{AppKey: "app", Uid: "userA", Channels: []string{"room1"}},
+		{AppKey: "app", Uid: "userB", Channels: []string{"room2"}},
+	})
+	time.Sleep(50 * time.Millisecond) // responders subscribe on construction
+
+	stats, err := p1.Stats("gusher.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := stats["app"]
+	if got.Conns != 4 { // 2 + 2, exact (each socket on exactly one node)
+		t.Fatalf("Conns = %d, want 4 (exact socket count)", got.Conns)
+	}
+	if got.Users != 3 { // node1 distinct 1 + node2 distinct 2; userA double-counted
+		t.Fatalf("Users = %d, want 3 (approx; userA on both nodes)", got.Users)
+	}
+}
+
 // TestPubSubDelivery: client 訂閱頻道 → broker.Publish → client 收到。兩後端各跑一次。
 func TestPubSubDelivery(t *testing.T) {
 	for name, factory := range backends {
